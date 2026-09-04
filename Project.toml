@@ -1,6 +1,6 @@
 name = "Quack"
 uuid = "5fc8e4f1-edf5-40c0-9a7f-8b07bfcfe6fb"
-version = "1.0.9"
+version = "2.0.0"
 authors = ["Danilo Ferreira de Lima <danilo.enoque.ferreira.de.lima@xfel.de>"]
 
 [deps]
