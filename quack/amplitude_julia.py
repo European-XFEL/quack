@@ -85,6 +85,47 @@ def get_field(
     return opt_index-1, converged, X, pred, evolution, evolution_spec, evolution_X
 
 
+def get_field_nlls(
+              E1: np.ndarray,
+              E2: np.ndarray,
+              O: np.ndarray,
+              weight: np.ndarray,
+              initial: np.ndarray,
+              spectrum: Optional[np.ndarray]=None,
+              spectrum_mode: int=-1,
+              tol: float=1e-4,
+              max_iter: int=30,
+              kappa: float=200.0,
+              ):
+    """
+    Same problem as `get_field`, solved as a nonlinear least squares with Levenberg-Marquardt
+    (see `quack/nlls.jl`) instead of the primal-dual iteration.
+
+    Args:
+      tol: Stop once the objective has decreased by less than this fraction over three steps.
+      max_iter: Maximum number of Levenberg-Marquardt steps per Up value.
+
+    Returns: (index of the best Up, converged, coefficients, prediction).
+    """
+    n_support = E1.shape[1]
+
+    O = np.reshape(O, (-1,))/np.sqrt(np.sum(O**2))
+    weight = np.reshape(weight, (-1,))
+    if spectrum is None:
+        spectrum = np.nan*np.zeros((n_support//2,), dtype=O.dtype)
+    assert len(spectrum) == n_support//2
+
+    # updated in place by Julia
+    X = np.ascontiguousarray(initial, dtype=np.float64)
+    opt_index = Quack.solve_nlls_parallel_b(X, E1, E2, O, weight, spectrum, spectrum_mode,
+                                            tol=float(tol), max_iter=int(max_iter), kappa=float(kappa))
+
+    pred = (E1[:,:,opt_index-1] @ X)**2 + (E2[:,:,opt_index-1] @ X)**2
+    pred /= np.sqrt(np.sum(pred**2))
+
+    return opt_index-1, True, X, pred
+
+
 def get_field_two_pols(
               E1A: np.ndarray,
               E2A: np.ndarray,
