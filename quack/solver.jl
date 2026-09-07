@@ -394,6 +394,11 @@ function solve_parallel!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
     e = stack(evolution for j in 1:n_Up)
     eS = stack(evolution_spec for j in 1:n_Up)
     eX = stack(evolution_X for j in 1:n_Up)
+    e1 = Array(e1)
+    e2 = Array(e2)
+    obs = Array(obs)
+    weight = Array(weight)
+    spectrum = Array(spectrum)
 
     tasks = map(1:n_Up) do i_Up
         Threads.@spawn solve!(view(ys, :, i_Up), view(xs, :, i_Up),
@@ -691,6 +696,13 @@ function solve_parallel_two_pols!(y::AbstractVector{Float64},
     e = stack(evolution for j in 1:n_Up)
     eS = stack(evolution_spec for j in 1:n_Up)
     #eX = stack(evolution_X for j in 1:n_Up)
+    e1A = Array(e1A)
+    e2A = Array(e2A)
+    e1B = Array(e1B)
+    e2B = Array(e2B)
+    obs = Array(obs)
+    weight = Array(weight)
+    spectrum = Array(spectrum)
 
     tasks = map(1:n_Up) do i_Up
         Threads.@spawn solve_two_pols!(view(ys, :, i_Up),
