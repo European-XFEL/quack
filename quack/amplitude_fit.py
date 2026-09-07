@@ -407,12 +407,12 @@ class AmplitudeSolver(object):
               guess_initial: bool=True,
               max_iter: Optional[int]=None,
               nthreads: int=40,
-              max_Up: float=np.inf,
+              Up: Optional[np.array]=None,
               calculate_wigner: bool=True,
               spectrum: Optional[np.ndarray]=None,
               spectrum_axis: Optional[np.ndarray]=None,
               spectrum_mode: int=-1,
-              kappa: float=0.05,
+              kappa: float=200.0,
               gpu: bool=False,
               constrain: str="everywhere",
               step: float=1.0,
@@ -429,7 +429,7 @@ class AmplitudeSolver(object):
           guess_initial: Make a guess of the initial energy spectrum to get faster convergence.
           max_iter: Maximum number of iterations.
           nthreads: Number of threads if parallelizing.
-          max_Up: Ignore Up above this value.
+          Up: If given, restrict Up values to test to these.
           kappa: Ratio of step sizes between angular streaking observation and spectral constraint. Must be bigger than 0.
           constrain: If "everywhere", constrain the energy spectrum to zero when nan.
                      If "partial", only constrain where given, but constrain to zero out of the eTOF support.
@@ -437,15 +437,16 @@ class AmplitudeSolver(object):
         Returns: A QUACKAmpSolution object with several details.
         """
         # find out maximum Up, but clip it to maximum in basis
-        if max_Up >= self.basis.Up[self.basis.NA-1]:
-            max_Up = self.basis.Up[self.basis.NA-1]
+        if Up is None:
+            Up = self.basis.Up[:]
         # set up default tolerance
         if tol is None:
-            tol = 1e-5
+            tol = 1e-20
         if max_iter is None:
             max_iter = 2000
 
-        max_iUp = np.where(self.basis.Up >= max_Up)[0][0]
+        iUp = np.unique(np.searchsorted(self.basis.Up, Up))
+        iUp[iUp >= len(self.basis.Up)] = len(self.basis.Up) - 1
         # if weight is not provided, fallback to ones
         if weight is None:
             w = np.ones_like(obs)
@@ -494,8 +495,8 @@ class AmplitudeSolver(object):
         solution.t = self.time_axis
         # solve it and fill the output
         if method == 'torch':
-            idx_A, converged, X, pred, evolution, evolution_spec, eX = optimize_with_torch(E1=self.basis.E1[:,:,:max_iUp],
-                                                                       E2=self.basis.E2[:,:,:max_iUp],
+            idx_A, converged, X, pred, evolution, evolution_spec, eX = optimize_with_torch(E1=self.basis.E1[:,:,iUp],
+                                                                       E2=self.basis.E2[:,:,iUp],
                                                                        O=s,
                                                                        weight=w,
                                                                        spectrum=int_spectrum,
@@ -522,10 +523,10 @@ class AmplitudeSolver(object):
         elif method == 'julia':
             if self.additional_basis is not None:
                 idx_A, converged, XA, XB, pred, evolution, evolution_spec = get_field_two_pols_julia(
-                    E1A=self.basis.E1[:,:,:max_iUp],
-                    E2A=self.basis.E2[:,:,:max_iUp],
-                    E1B=self.additional_basis.E1[:,:,:max_iUp],
-                    E2B=self.additional_basis.E2[:,:,:max_iUp],
+                    E1A=self.basis.E1[:,:,iUp],
+                    E2A=self.basis.E2[:,:,iUp],
+                    E1B=self.additional_basis.E1[:,:,iUp],
+                    E2B=self.additional_basis.E2[:,:,iUp],
                     O=s,
                     weight=w,
                     initial=initial,
@@ -547,8 +548,8 @@ class AmplitudeSolver(object):
                 solution.additional_Ew = a_Ew
             else:
                 idx_A, converged, X, pred, evolution, evolution_spec, eX = get_field_julia(
-                    E1=self.basis.E1[:,:,:max_iUp],
-                    E2=self.basis.E2[:,:,:max_iUp],
+                    E1=self.basis.E1[:,:,iUp],
+                    E2=self.basis.E2[:,:,iUp],
                     O=s,
                     weight=w,
                     initial=initial,
@@ -574,7 +575,7 @@ class AmplitudeSolver(object):
             solution.unc = np.amax(np.fabs(solution.pred/np.amax(pred) - s/np.amax(s)))
         else:
             raise NotImplementedError("Methods avalable are: 'julia', 'torch'.")
-        solution.Up = self.basis.Up[idx_A]
+        solution.Up = self.basis.Up[iUp[idx_A]]
         solution.kick = np.sqrt(4*solution.Up/eV_per_au)*c*eV_per_au
         solution.unc_per_angle = np.amax(np.fabs(solution.pred/np.amax(solution.pred) - s/np.amax(s)), axis=-2)
         solution.unc_per_energy = np.amax(np.fabs(solution.pred/np.amax(solution.pred) - s/np.amax(s)), axis=-1)
@@ -606,6 +607,6 @@ class AmplitudeSolver(object):
                 pred_Ew2 = np.abs(solution.Ew)**2
             solution.rspec = get_rnorm(pred_Ew2, target_Ew2)
             solution.cspec = get_cnorm(pred_Ew2, target_Ew2)
-        logging.info(f"Best Up: {self.basis.Up[idx_A]:.2f} eV, eTOF sim = {solution.cnorm:.5f}, spectral sim = {solution.cspec:.5f}")
+        logging.info(f"Best Up: {solution.Up:.2f} eV, eTOF sim = {solution.cnorm:.5f}, spectral sim = {solution.cspec:.5f}")
         return solution
 
