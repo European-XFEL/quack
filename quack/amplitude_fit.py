@@ -441,7 +441,7 @@ class AmplitudeSolver(object):
             Up = self.basis.Up[:]
         # set up default tolerance
         if tol is None:
-            tol = 1e-5
+            tol = 1e-20
         if max_iter is None:
             max_iter = 2000
 
