@@ -389,11 +389,16 @@ function solve_parallel!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
                 tol::Float64=1e-5, max_iter::Int64=2000,
                 kappa::Float64=5.0, step::Float64=1.0, alpha::Float64=0.0)::Int64
     n_Up = size(e1)[3]
-    xs = stack(x for j in 1:n_Up)
-    ys = stack(y for j in 1:n_Up)
-    e = stack(evolution for j in 1:n_Up)
-    eS = stack(evolution_spec for j in 1:n_Up)
-    eX = stack(evolution_X for j in 1:n_Up)
+    xs = Array(stack(x for j in 1:n_Up))
+    ys = Array(stack(y for j in 1:n_Up))
+    e = Array(stack(evolution for j in 1:n_Up))
+    eS = Array(stack(evolution_spec for j in 1:n_Up))
+    eX = Array(stack(evolution_X for j in 1:n_Up))
+    e1 = Array(e1)
+    e2 = Array(e2)
+    obs = Array(obs)
+    weight = Array(weight)
+    spectrum = Array(spectrum)
 
     tasks = map(1:n_Up) do i_Up
         Threads.@spawn solve!(view(ys, :, i_Up), view(xs, :, i_Up),
