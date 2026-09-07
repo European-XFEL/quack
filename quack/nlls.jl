@@ -169,30 +169,69 @@ function NLLSSolver(n_obs::Int, n_x::Int, spectrum_mode::Int, kappa::Float64;
 end
 
 """
-    nlls_solve!(s::NLLSSolver, x0, e1, e2, obs, weight, spectrum)
+    nlls_solve!(s::NLLSSolver, x0, e1, e2, obs, weight, spectrum; stall_tol=nothing, patience=3)
 
-Fit one Up slice starting from `x0`. Returns `(x, objective, sol)`.
+Fit one Up slice starting from `x0`. Returns `(x, objective, info)` where `info` holds
+`nsteps`, `nf`, `njacs` and `retcode`.
+
+With `stall_tol` set, the iteration stops as soon as the objective 1/2‖r‖² has decreased by
+less than `stall_tol` (relative) over the last `patience` accepted steps; otherwise the
+termination condition baked into the cache at `init` applies.
 """
 function nlls_solve!(s::NLLSSolver, x0::AbstractVector, e1::AbstractMatrix, e2::AbstractMatrix,
-                     obs::AbstractVector, weight::AbstractVector, spectrum::AbstractVector)
+                     obs::AbstractVector, weight::AbstractVector, spectrum::AbstractVector;
+                     stall_tol::Union{Nothing, Float64}=nothing, patience::Int=3)
     nlls_set_data!(s.d, e1, e2, obs, weight, spectrum)
     NonlinearSolve.reinit!(s.cache; u0=Vector{Float64}(x0))
-    sol = NonlinearSolve.solve!(s.cache)
-    x = Vector{Float64}(sol.u)
-    return x, nlls_objective(s.d, x), sol
+    inner = s.cache.cache
+    if stall_tol === nothing
+        NonlinearSolve.NonlinearSolveBase.solve_cache!(inner)
+    else
+        history = Float64[]
+        best_objective = Inf
+        best_x = similar(inner.u)
+        observer = (u, fu, iteration) -> begin
+            objective = 0.5 * sum(abs2, fu)
+            if objective < best_objective
+                best_objective = objective
+                copyto!(best_x, u)
+            end
+            # a rejected LM step leaves u and the objective unchanged: count accepted steps only,
+            # otherwise the damping adjustments at the start look like stagnation
+            if isempty(history) || objective != history[end]
+                push!(history, objective)
+            end
+            n = length(history)
+            # floor keeps the test meaningful when the objective reaches zero (noise-free data)
+            if n > patience && history[n - patience] - history[n] < stall_tol * max(history[n], eps(Float64))
+                inner.retcode = NonlinearSolve.ReturnCode.StalledSuccess
+                inner.force_stop = true
+            end
+            return nothing
+        end
+        NonlinearSolve.NonlinearSolveBase.solve_cache!(inner; step_observer=observer)
+    end
+    x = Vector{Float64}(inner.u)
+    if stall_tol !== nothing && isfinite(best_objective) && 0.5 * sum(abs2, inner.fu) > best_objective
+        # a non-monotone solver may end on a worse iterate than it has already seen
+        copyto!(x, best_x)
+    end
+    info = (; nsteps=inner.nsteps, nf=inner.stats.nf, njacs=inner.stats.njacs, retcode=inner.retcode)
+    return x, nlls_objective(s.d, x), info
 end
 
 """
     solve_nlls(x0, e1, e2, obs, weight, spectrum, spectrum_mode; kappa, alg, maxiters, kwargs...)
 
-One-shot fit of a single Up slice (builds a fresh `NLLSSolver`). Returns `(x, objective, sol)`.
+One-shot fit of a single Up slice (builds a fresh `NLLSSolver`). Returns `(x, objective, info)`.
 """
 function solve_nlls(x0::AbstractVector, e1::AbstractMatrix, e2::AbstractMatrix,
                     obs::AbstractVector, weight::AbstractVector,
                     spectrum::AbstractVector, spectrum_mode::Int;
-                    kappa::Float64=200.0, kwargs...)
+                    kappa::Float64=200.0, stall_tol::Union{Nothing, Float64}=nothing, patience::Int=3,
+                    kwargs...)
     s = NLLSSolver(size(e1, 1), size(e1, 2), spectrum_mode, kappa; kwargs...)
-    return nlls_solve!(s, x0, e1, e2, obs, weight, spectrum)
+    return nlls_solve!(s, x0, e1, e2, obs, weight, spectrum; stall_tol, patience)
 end
 
 # Pool of solvers (one per thread) shared by the Up scan and kept across calls, keyed on
@@ -231,7 +270,8 @@ Fit every Up slice of the 3D `e1`/`e2` arrays (threaded, reusing pooled solvers)
 function solve_nlls_scan(x0::AbstractVector, e1::AbstractArray{Float64,3}, e2::AbstractArray{Float64,3},
                          obs::AbstractVector, weight::AbstractVector,
                          spectrum::AbstractVector, spectrum_mode::Int;
-                         kappa::Float64=200.0, kwargs...)
+                         kappa::Float64=200.0, stall_tol::Union{Nothing, Float64}=nothing, patience::Int=3,
+                         kwargs...)
     # copy Python-owned inputs on the main thread: the tasks below must not touch PyArrays
     x0, e1, e2, obs, weight, spectrum = to_array.((x0, e1, e2, obs, weight, spectrum))
     n_Up = size(e1, 3)
@@ -239,7 +279,8 @@ function solve_nlls_scan(x0::AbstractVector, e1::AbstractArray{Float64,3}, e2::A
     results = map_over_Up(n_Up) do i
         s = take!(pool.solvers)
         try
-            x, obj, _ = nlls_solve!(s, x0, view(e1, :, :, i), view(e2, :, :, i), obs, weight, spectrum)
+            x, obj, _ = nlls_solve!(s, x0, view(e1, :, :, i), view(e2, :, :, i), obs, weight, spectrum;
+                                    stall_tol, patience)
             (x, obj)
         finally
             put!(pool.solvers, s)
@@ -254,8 +295,9 @@ end
     solve_nlls_parallel!(x, e1, e2, obs, weight, spectrum, spectrum_mode; tol, max_iter, kappa)
 
 Entry point mirroring `solve_parallel!`: scans all Up values, writes the best field into `x`
-(initial guess on input) and returns the 1-based index of the best Up. `tol` is the relative
-step size below which the iteration stops; `max_iter` caps the number of LM steps.
+(initial guess on input) and returns the 1-based index of the best Up. The iteration stops
+once the objective has decreased by less than `tol` (relative) over three consecutive steps;
+`max_iter` caps the number of LM steps.
 """
 function solve_nlls_parallel!(x::AbstractVector{Float64},
                               e1::AbstractArray{Float64, 3}, e2::AbstractArray{Float64, 3},
@@ -265,9 +307,7 @@ function solve_nlls_parallel!(x::AbstractVector{Float64},
                               spectrum_mode::Int64;
                               tol::Float64=1e-4, max_iter::Int64=30, kappa::Float64=200.0)::Int64
     best, x_best, _ = solve_nlls_scan(x, e1, e2, obs, weight, spectrum, spectrum_mode;
-                                      kappa=kappa, maxiters=max_iter,
-                                      termination_condition=NonlinearSolve.RelTerminationMode(),
-                                      reltol=tol)
+                                      kappa=kappa, maxiters=max_iter, stall_tol=tol)
     x[:] .= x_best
     return best
 end

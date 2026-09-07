@@ -102,7 +102,7 @@ def get_field_nlls(
     (see `quack/nlls.jl`) instead of the primal-dual iteration.
 
     Args:
-      tol: Relative step size below which the iteration stops.
+      tol: Stop once the objective has decreased by less than this fraction over three steps.
       max_iter: Maximum number of Levenberg-Marquardt steps per Up value.
 
     Returns: (index of the best Up, converged, coefficients, prediction).

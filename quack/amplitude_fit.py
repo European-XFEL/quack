@@ -426,7 +426,8 @@ class AmplitudeSolver(object):
           obs: Observed data.
           weight: Weight proportional to the data accuracy. Same shape as observation.
           tol: Tolerance for convergence. For "julia": |rnorm[100-i] - rnorm[i]| < tol (default 1e-20).
-               For "nlls": relative step size below which the iteration stops (default 1e-4).
+               For "nlls": relative decrease of the objective over three steps below which the
+               iteration stops (default 1e-4).
           method: "julia" for the primal-dual (proximal) iteration, "nlls" for Levenberg-Marquardt on the
                   equivalent nonlinear least-squares problem (single basis only), "torch" for gradient descent.
           guess_initial: Make a guess of the initial energy spectrum to get faster convergence.
