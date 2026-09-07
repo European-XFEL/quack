@@ -1,17 +1,4 @@
-using MKL
-using LinearAlgebra
-using Base.Threads
-
-function calculate_y!(x::AbstractVector{Float64},
-                      e1::AbstractMatrix{Float64}, e2::AbstractMatrix{Float64},
-                      z1::AbstractVector{Float64}, z2::AbstractVector{Float64},
-                      y::AbstractVector{Float64})::Float64
-    mul!(z1, e1, x)
-    mul!(z2, e2, x)
-    @. y = z1^2 + z2^2
-
-    return 1.0/sqrt(mapreduce(x -> x^2, +, y))
-end
+# Proximal (PDHGM) solver. Shared helpers (forward model, norms, Up scan) live in model.jl.
 
 function calculate_y_two_pols!(xA::AbstractVector{Float64}, xS::AbstractVector{Float64},
                                e1A::AbstractMatrix{Float64}, e2A::AbstractMatrix{Float64},
@@ -26,28 +13,6 @@ function calculate_y_two_pols!(xA::AbstractVector{Float64}, xS::AbstractVector{F
     @. y = (z1A + z1B)^2 + (z2A + z2B)^2
 
     return 1.0/sqrt(mapreduce(x -> x^2, +, y))
-end
-
-function calculate_norm(n_dim::Int64, spectrum::AbstractVector{Float64})::Float64
-    norm::Float64 = 0.0
-    @fastmath @inbounds @simd for j in 1:n_dim
-        if !(isnan(spectrum[j]))
-            norm = norm + spectrum[j]^2
-        end
-    end
-    norm = sqrt(norm)
-end
-
-function calculate_norm_split(n_dim::Int64, spectrum_reference::AbstractVector{Float64},
-        spectrum_cartesian::AbstractVector{Float64})::Float64
-    norm::Float64 = 0.0
-    @fastmath @inbounds @simd for j in 1:n_dim
-        if !(isnan(spectrum_reference[j]))
-            norm = norm + spectrum_cartesian[j]^2 + spectrum_cartesian[n_dim+j]^2
-        end
-    end
-    norm = sqrt(norm)
-    return norm
 end
 
 function project_indicator!(n_dim::Int64,
@@ -335,13 +300,7 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
         errs[1] = 0.5 * mapreduce(x -> x^2, +, y)
 
         # store streaking error
-        # Note that we use an explicit loop rather than a mapreduce closure to
-        # prevent closure-boxing.
-        streak_err = 0.0
-        for i in 1:n_obs
-            streak_err += weight[i]^2 * (yhat[i] * norm_yhat - obs[i])^2
-        end
-        evolution[n] = streak_err / n_obs
+        evolution[n] = streaking_error(yhat, norm_yhat, obs, weight) / n_obs
 
         # store spectrum
         evolution_X[n,:] = x
@@ -388,6 +347,7 @@ function solve_parallel!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
                 evolution_X::AbstractMatrix{Float64};
                 tol::Float64=1e-5, max_iter::Int64=2000,
                 kappa::Float64=5.0, step::Float64=1.0, alpha::Float64=0.0)::Int64
+    e1, e2, obs, weight, spectrum = to_array.((e1, e2, obs, weight, spectrum))
     n_Up = size(e1)[3]
     xs = stack(x for j in 1:n_Up)
     ys = stack(y for j in 1:n_Up)
@@ -400,17 +360,15 @@ function solve_parallel!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
     weight = Array(weight)
     spectrum = Array(spectrum)
 
-    tasks = map(1:n_Up) do i_Up
-        Threads.@spawn solve!(view(ys, :, i_Up), view(xs, :, i_Up),
-                              view(e1, :, :, i_Up), view(e2, :, :, i_Up),
-                              view(obs, :), view(weight, :),
-                              view(spectrum, :), spectrum_mode,
-                              view(e, :, i_Up), view(eS, :, i_Up),
-                              view(eX, :, :, i_Up);
-                              tol=tol, max_iter=max_iter, kappa=kappa,
-                              step=step, alpha=alpha)
+    norms = map_over_Up(n_Up) do i_Up
+        solve!(view(ys, :, i_Up), view(xs, :, i_Up),
+               view(e1, :, :, i_Up), view(e2, :, :, i_Up),
+               obs, weight, spectrum, spectrum_mode,
+               view(e, :, i_Up), view(eS, :, i_Up),
+               view(eX, :, :, i_Up);
+               tol=tol, max_iter=max_iter, kappa=kappa,
+               step=step, alpha=alpha)
     end
-    norms = fetch.(tasks)
     best_Up = argmin(norms)
     y[:] .= ys[:, best_Up]
     x[:] .= xs[:, best_Up]
@@ -632,13 +590,7 @@ function solve_two_pols!(y::AbstractVector{Float64},
         errs[1] = 0.5 * mapreduce(x -> x^2, +, y)
 
         # store streaking error
-        # Note that we use an explicit loop rather than a mapreduce closure to
-        # prevent closure-boxing.
-        streak_err = 0.0
-        for i in 1:n_obs
-            streak_err += weight[i]^2 * (yhat[i] * norm_yhat - obs[i])^2
-        end
-        evolution[n] = streak_err / n_obs
+        evolution[n] = streaking_error(yhat, norm_yhat, obs, weight) / n_obs
 
         # store spectrum
         #evolution_X[n,:] = x
@@ -689,6 +641,7 @@ function solve_parallel_two_pols!(y::AbstractVector{Float64},
                                   ;#evolution_X::AbstractMatrix{Float64};
                                   tol::Float64=1e-5, max_iter::Int64=2000,
                                   kappa::Float64=5.0, step::Float64=1.0, alpha::Float64=0.0)::Int64
+    e1A, e2A, e1B, e2B, obs, weight, spectrum = to_array.((e1A, e2A, e1B, e2B, obs, weight, spectrum))
     n_Up = size(e1A)[3]
     xAs = stack(xA for j in 1:n_Up)
     xBs = stack(xB for j in 1:n_Up)
@@ -704,19 +657,17 @@ function solve_parallel_two_pols!(y::AbstractVector{Float64},
     weight = Array(weight)
     spectrum = Array(spectrum)
 
-    tasks = map(1:n_Up) do i_Up
-        Threads.@spawn solve_two_pols!(view(ys, :, i_Up),
-                                       view(xAs, :, i_Up), view(xBs, :, i_Up),
-                                       view(e1A, :, :, i_Up), view(e2A, :, :, i_Up),
-                                       view(e1B, :, :, i_Up), view(e2B, :, :, i_Up),
-                                       view(obs, :), view(weight, :),
-                                       view(spectrum, :), spectrum_mode,
-                                       view(e, :, i_Up), view(eS, :, i_Up),
-                                       ;#view(eX, :, :, i_Up);
-                                       tol=tol, max_iter=max_iter, kappa=kappa,
-                                       step=step, alpha=alpha)
+    norms = map_over_Up(n_Up) do i_Up
+        solve_two_pols!(view(ys, :, i_Up),
+                        view(xAs, :, i_Up), view(xBs, :, i_Up),
+                        view(e1A, :, :, i_Up), view(e2A, :, :, i_Up),
+                        view(e1B, :, :, i_Up), view(e2B, :, :, i_Up),
+                        obs, weight, spectrum, spectrum_mode,
+                        view(e, :, i_Up), view(eS, :, i_Up),
+                        ;#view(eX, :, :, i_Up);
+                        tol=tol, max_iter=max_iter, kappa=kappa,
+                        step=step, alpha=alpha)
     end
-    norms = fetch.(tasks)
     best_Up = argmin(norms)
     y[:] .= ys[:, best_Up]
     xA[:] .= xAs[:, best_Up]

@@ -4,9 +4,13 @@ version = "2.0.0"
 authors = ["Danilo Ferreira de Lima <danilo.enoque.ferreira.de.lima@xfel.de>"]
 
 [deps]
+CurveFit = "5a033b19-8c74-5913-a970-47c3779ef25c"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MKL = "33e6dc65-8f57-5167-99aa-e5a354878fb2"
+NonlinearSolve = "8913a72c-1f9b-4ce2-8d82-65094dcecaec"
 
 [compat]
+CurveFit = "1.11"
 LinearAlgebra = "1.12.0"
 MKL = "0.9.1"
+NonlinearSolve = "4.20"

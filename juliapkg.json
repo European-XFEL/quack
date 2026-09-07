@@ -1,9 +1,16 @@
 {
     "packages": {
-        "Quack": {
-            "uuid": "9296f5e7802d6b3a132d06c45a528d81b261b54a",
-            "path": "",
-            "dev": true
+        "MKL": {
+            "uuid": "33e6dc65-8f57-5167-99aa-e5a354878fb2",
+            "version": "0.9"
+        },
+        "CurveFit": {
+            "uuid": "5a033b19-8c74-5913-a970-47c3779ef25c",
+            "version": "1.11"
+        },
+        "NonlinearSolve": {
+            "uuid": "8913a72c-1f9b-4ce2-8d82-65094dcecaec",
+            "version": "4.20"
         }
     }
 }

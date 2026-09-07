@@ -15,6 +15,7 @@ from quack.utils import fw
 from quack.amplitude_torch import optimize_with_torch
 from quack.amplitude_julia import get_field as get_field_julia
 from quack.amplitude_julia import get_field_two_pols as get_field_two_pols_julia
+from quack.amplitude_julia import get_field_nlls
 
 from functools import partial
 import scipy
@@ -424,10 +425,12 @@ class AmplitudeSolver(object):
         Args:
           obs: Observed data.
           weight: Weight proportional to the data accuracy. Same shape as observation.
-          tol: Tolerance for convergence: |rnorm[100-i] - rnorm[i]| < tol at convergence.
-          method: If "parallel", solve for all Up in parallel. If "optimize_A", use a bisection method to avoid parallelization.
+          tol: Tolerance for convergence. For "julia": |rnorm[100-i] - rnorm[i]| < tol (default 1e-20).
+               For "nlls": relative step size below which the iteration stops (default 1e-4).
+          method: "julia" for the primal-dual (proximal) iteration, "nlls" for Levenberg-Marquardt on the
+                  equivalent nonlinear least-squares problem (single basis only), "torch" for gradient descent.
           guess_initial: Make a guess of the initial energy spectrum to get faster convergence.
-          max_iter: Maximum number of iterations.
+          max_iter: Maximum number of iterations (default 2000 for "julia", 30 for "nlls").
           nthreads: Number of threads if parallelizing.
           Up: If given, restrict Up values to test to these.
           kappa: Ratio of step sizes between angular streaking observation and spectral constraint. Must be bigger than 0.
@@ -441,9 +444,15 @@ class AmplitudeSolver(object):
             Up = self.basis.Up[:]
         # set up default tolerance
         if tol is None:
-            tol = 1e-20
+            if method == 'nlls':
+                tol = 1e-4
+            else:
+                tol = 1e-20
         if max_iter is None:
-            max_iter = 2000
+            if method == 'nlls':
+                max_iter = 30
+            else:
+                max_iter = 2000
 
         iUp = np.unique(np.searchsorted(self.basis.Up, Up))
         iUp[iUp >= len(self.basis.Up)] = len(self.basis.Up) - 1
@@ -520,8 +529,30 @@ class AmplitudeSolver(object):
             solution.evolution_Et, _ = self.post_process(eX)
             solution.Et = Et
             solution.Ew = Ew
-        elif method == 'julia':
-            if self.additional_basis is not None:
+        elif method in ('julia', 'nlls'):
+            if method == 'nlls':
+                if self.additional_basis is not None:
+                    raise NotImplementedError("method='nlls' does not support an additional basis yet.")
+                idx_A, converged, X, pred = get_field_nlls(
+                    E1=self.basis.E1[:,:,iUp],
+                    E2=self.basis.E2[:,:,iUp],
+                    O=s,
+                    weight=w,
+                    initial=initial,
+                    spectrum=int_spectrum,
+                    spectrum_mode=spectrum_mode,
+                    tol=tol,
+                    max_iter=max_iter,
+                    kappa=kappa,
+                )
+                # no per-iteration trace from the least-squares solver
+                evolution = np.zeros(0)
+                evolution_spec = np.zeros(0)
+                solution.raw = X
+                Et, Ew = self.post_process(X)
+                solution.Et = Et
+                solution.Ew = Ew
+            elif self.additional_basis is not None:
                 idx_A, converged, XA, XB, pred, evolution, evolution_spec = get_field_two_pols_julia(
                     E1A=self.basis.E1[:,:,iUp],
                     E2A=self.basis.E2[:,:,iUp],
@@ -574,7 +605,7 @@ class AmplitudeSolver(object):
             solution.target = solution.rnorm
             solution.unc = np.amax(np.fabs(solution.pred/np.amax(pred) - s/np.amax(s)))
         else:
-            raise NotImplementedError("Methods avalable are: 'julia', 'torch'.")
+            raise NotImplementedError("Methods avalable are: 'julia', 'nlls', 'torch'.")
         solution.Up = self.basis.Up[iUp[idx_A]]
         solution.kick = np.sqrt(4*solution.Up/eV_per_au)*c*eV_per_au
         solution.unc_per_angle = np.amax(np.fabs(solution.pred/np.amax(solution.pred) - s/np.amax(s)), axis=-2)
