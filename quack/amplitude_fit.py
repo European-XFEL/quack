@@ -412,7 +412,7 @@ class AmplitudeSolver(object):
               spectrum: Optional[np.ndarray]=None,
               spectrum_axis: Optional[np.ndarray]=None,
               spectrum_mode: int=-1,
-              kappa: float=0.05,
+              kappa: float=200.0,
               gpu: bool=False,
               constrain: str="everywhere",
               step: float=1.0,
