@@ -446,6 +446,7 @@ class AmplitudeSolver(object):
             max_iter = 2000
 
         iUp = np.unique(np.searchsorted(self.basis.Up, Up))
+        iUp[iUp >= len(self.basis.Up)] = len(self.basis.Up) - 1
         # if weight is not provided, fallback to ones
         if weight is None:
             w = np.ones_like(obs)
@@ -574,7 +575,7 @@ class AmplitudeSolver(object):
             solution.unc = np.amax(np.fabs(solution.pred/np.amax(pred) - s/np.amax(s)))
         else:
             raise NotImplementedError("Methods avalable are: 'julia', 'torch'.")
-        solution.Up = self.basis.Up[idx_A]
+        solution.Up = self.basis.Up[iUp[idx_A]]
         solution.kick = np.sqrt(4*solution.Up/eV_per_au)*c*eV_per_au
         solution.unc_per_angle = np.amax(np.fabs(solution.pred/np.amax(solution.pred) - s/np.amax(s)), axis=-2)
         solution.unc_per_energy = np.amax(np.fabs(solution.pred/np.amax(solution.pred) - s/np.amax(s)), axis=-1)
@@ -606,6 +607,6 @@ class AmplitudeSolver(object):
                 pred_Ew2 = np.abs(solution.Ew)**2
             solution.rspec = get_rnorm(pred_Ew2, target_Ew2)
             solution.cspec = get_cnorm(pred_Ew2, target_Ew2)
-        logging.info(f"Best Up: {self.basis.Up[idx_A]:.2f} eV, eTOF sim = {solution.cnorm:.5f}, spectral sim = {solution.cspec:.5f}")
+        logging.info(f"Best Up: {solution.Up:.2f} eV, eTOF sim = {solution.cnorm:.5f}, spectral sim = {solution.cspec:.5f}")
         return solution
 
