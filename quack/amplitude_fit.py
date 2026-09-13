@@ -286,7 +286,7 @@ class AmplitudeSolver(object):
     @property
     def oversampled_energy_axis(self):
         """Energy axis."""
-        return basis.omega
+        return self.basis.omega
 
     @property
     def time_axis(self):
