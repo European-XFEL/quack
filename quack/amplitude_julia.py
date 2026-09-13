@@ -53,8 +53,6 @@ def get_field(
     n_obs = NW*Ntheta
     n_support = E1.shape[1]
     w = 1.0
-    init_tau = 0.1
-    init_sigma = 0.1
 
     # reshape and normalize O
     O = np.reshape(O, (-1,))/np.sqrt(np.sum(O**2))
@@ -136,8 +134,6 @@ def get_field_two_pols(
     n_obs = NW*Ntheta
     n_support = E1A.shape[1]
     w = 1.0
-    init_tau = 0.1
-    init_sigma = 0.1
 
     # reshape and normalize O
     O = np.reshape(O, (-1,))/np.sqrt(np.sum(O**2))
@@ -177,3 +173,4 @@ def get_field_two_pols(
     pred /= np.sqrt(np.sum(pred**2))
 
     return opt_index-1, converged, XA, XB, pred, evolution, evolution_spec
+

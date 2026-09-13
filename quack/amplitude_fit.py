@@ -15,6 +15,8 @@ from quack.utils import fw
 from quack.amplitude_torch import optimize_with_torch
 from quack.amplitude_julia import get_field as get_field_julia
 from quack.amplitude_julia import get_field_two_pols as get_field_two_pols_julia
+from quack.amplitude_julia import get_gaussian as get_gaussian_julia
+#from quack.amplitude_julia import get_gaussian_two_pols as get_gaussian_two_pols_julia
 
 from functools import partial
 import scipy
@@ -425,7 +427,7 @@ class AmplitudeSolver(object):
           obs: Observed data.
           weight: Weight proportional to the data accuracy. Same shape as observation.
           tol: Tolerance for convergence: |rnorm[100-i] - rnorm[i]| < tol at convergence.
-          method: If "parallel", solve for all Up in parallel. If "optimize_A", use a bisection method to avoid parallelization.
+          method: If "julia", use Julia PDHGM solver to fit full spectrum. If "torch", use PyTorch. If "simple", fit only two Gaussians to the data.
           guess_initial: Make a guess of the initial energy spectrum to get faster convergence.
           max_iter: Maximum number of iterations.
           nthreads: Number of threads if parallelizing.
@@ -573,8 +575,64 @@ class AmplitudeSolver(object):
             solution.rnorm = get_rnorm(pred.flatten(), s.flatten(), w.flatten())
             solution.target = solution.rnorm
             solution.unc = np.amax(np.fabs(solution.pred/np.amax(pred) - s/np.amax(s)))
+        elif method == 'simple':
+            omega = self.basis.omega[self.basis.omega_support]
+            if self.additional_basis is not None:
+                #idx_A, converged, XA, XB, pred, evolution, evolution_spec = get_gaussian_two_pols_julia(
+                #    omega=omega,
+                #    E1A=self.basis.E1[:,:,iUp],
+                #    E2A=self.basis.E2[:,:,iUp],
+                #    E1B=self.additional_basis.E1[:,:,iUp],
+                #    E2B=self.additional_basis.E2[:,:,iUp],
+                #    O=s,
+                #    weight=w,
+                #    initial=initial,
+                #    spectrum=int_spectrum,
+                #    spectrum_mode=spectrum_mode,
+                #    tol=tol,
+                #    max_iter=max_iter,
+                #    kappa=kappa,
+                #    step=step,
+                #    alpha=alpha,
+                #)
+                #solution.raw = XA
+                #solution.additional_raw = XB
+                #Et, Ew = self.post_process(XA)
+                #solution.Et = Et
+                #solution.Ew = Ew
+                #a_Et, a_Ew = self.post_process(XB)
+                #solution.additional_Et = a_Et
+                #solution.additional_Ew = a_Ew
+            else:
+                idx_A, converged, X, pred, evolution, evolution_spec, eX = get_gaussian_julia(
+                    omega=omega,
+                    E1=self.basis.E1[:,:,iUp],
+                    E2=self.basis.E2[:,:,iUp],
+                    O=s,
+                    weight=w,
+                    initial=initial,
+                    spectrum=int_spectrum,
+                    spectrum_mode=spectrum_mode,
+                    tol=tol,
+                    max_iter=max_iter,
+                    kappa=kappa,
+                    step=step,
+                    alpha=alpha,
+                )
+                solution.raw = X
+                Et, Ew = self.post_process(X)
+                solution.evolution_Et, _ = self.post_process(eX)
+                solution.Et = Et
+                solution.Ew = Ew
+            solution.pred = pred.reshape(self.basis.NW, self.basis.Ntheta)
+            solution.evolution = evolution
+            solution.evolution_spec = evolution_spec
+            solution.real_omega_support = self.basis.real_omega_support
+            solution.rnorm = get_rnorm(pred.flatten(), s.flatten(), w.flatten())
+            solution.target = solution.rnorm
+            solution.unc = np.amax(np.fabs(solution.pred/np.amax(pred) - s/np.amax(s)))
         else:
-            raise NotImplementedError("Methods avalable are: 'julia', 'torch'.")
+            raise NotImplementedError("Methods avalable are: 'julia', 'torch', 'simple'.")
         solution.Up = self.basis.Up[iUp[idx_A]]
         solution.kick = np.sqrt(4*solution.Up/eV_per_au)*c*eV_per_au
         solution.unc_per_angle = np.amax(np.fabs(solution.pred/np.amax(solution.pred) - s/np.amax(s)), axis=-2)
