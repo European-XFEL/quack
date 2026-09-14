@@ -61,6 +61,7 @@ def get_gaussian(
 
 
 def get_gaussian_two_pols(
+              omega: np.ndarray,
               E1A: np.ndarray,
               E2A: np.ndarray,
               E1B: np.ndarray,
@@ -107,7 +108,7 @@ def get_gaussian_two_pols(
     assert len(spectrum) == n_support//2
     evolution = np.zeros(max_iter, dtype=np.float64)
     evolution_spec = np.zeros(max_iter, dtype=np.float64)
-    opt_index = Quack.solve_gaussian_parallel_two_pols_b(y,
+    opt_index = Quack.solve_gaussian_parallel_two_pols_b(omega, y,
                                                 XA, XB,
                                                 E1A, E2A,
                                                 E1B, E2B,

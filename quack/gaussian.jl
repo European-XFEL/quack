@@ -36,7 +36,7 @@ function K_two_pols(xA::AbstractVector{<:Real}, xB::AbstractVector{<:Real},
     z2A = e2A * xA
     z1B = e1B * xB
     z2B = e2B * xB
-    y = (z1A + z1B)^2 + (z2A + z2B)^2
+    y = (z1A + z1B).^2 + (z2A + z2B).^2
     y = y/sqrt(mapreduce(x -> x^2, +, y))
     return y
 end
@@ -152,8 +152,6 @@ function solve_gaussian!(omega::AbstractVector{Float64},
     cost_etof = (model_etof(omega, p0, e1, e2) - obs).^2
     cost_spec = (model_spec(omega, p0) - spectrum/norm).^2
 
-    target = obs
-    weight = ones(size(obs))
     model = p -> sum((model_etof(omega, p, e1, e2) - obs).^2)/length(obs)
     if spectrum_mode >= 0
         model  = p -> sum((model_etof(omega, p, e1, e2) - obs).^2)/length(obs) + (ratio_bins/kappa)^2 * sum((model_spec(omega, p) - spectrum/norm).^2)/length(spectrum)
@@ -225,23 +223,21 @@ function solve_gaussian_parallel!(omega::AbstractVector{Float64},
 end
 
 
-function solve_gaussian_twopols!(omega::AbstractVector{Float64},
-                                 y::AbstractVector{Float64},
-                                 xA::AbstractVector{Float64}, xB::AbstractVector{Float64},
-                                 e1A::AbstractMatrix{Float64}, e2A::AbstractMatrix{Float64},
-                                 e1B::AbstractMatrix{Float64}, e2B::AbstractMatrix{Float64},
-                                 obs::AbstractVector{Float64},
-                                 weight::AbstractVector{Float64},
-                                 spectrum::AbstractVector{Float64},
-                                 spectrum_mode::Int64,
-                                 evolution::AbstractVector{Float64}, evolution_spec::AbstractVector{Float64},
-                                 evolution_X::AbstractMatrix{Float64};
-                                 tol::Float64=1e-10, max_iter::Int64=1000,
-                                 kappa::Float64=200.0)::Float64
+function solve_gaussian_two_pols!(omega::AbstractVector{Float64},
+                                  y::AbstractVector{Float64},
+                                  xA::AbstractVector{Float64}, xB::AbstractVector{Float64},
+                                  e1A::AbstractMatrix{Float64}, e2A::AbstractMatrix{Float64},
+                                  e1B::AbstractMatrix{Float64}, e2B::AbstractMatrix{Float64},
+                                  obs::AbstractVector{Float64},
+                                  weight::AbstractVector{Float64},
+                                  spectrum::AbstractVector{Float64},
+                                  spectrum_mode::Int64,
+                                  evolution::AbstractVector{Float64}, evolution_spec::AbstractVector{Float64};
+                                  tol::Float64=1e-10, max_iter::Int64=1000,
+                                  kappa::Float64=200.0)::Float64
         
     evolution[:] .= 0.0
     evolution_spec[:] .= 0.0
-    evolution_X[:,:] .= 0.0
     n_x::Int64 = size(xA)[1]
     n_obs::Int64 = size(y)[1]
     n_dim::Int64 = cld(size(xA)[1], 2)
@@ -256,7 +252,7 @@ function solve_gaussian_twopols!(omega::AbstractVector{Float64},
     # cannot get the phases (to be taken in main fit), so set them to zero initially
     if spectrum_mode >= 0
         sp0 = cat(p0[1:3], p0[5:7]; dims=1)
-        g = (w, p) -> exp(p[1]) * exp.(-0.5 * exp(p[2]) * (w .- p[3]).^2) + exp(p[4]) * exp.(-0.5 * exp(p[5]) * (w .- p[6]).^2)
+        g = p -> sum(exp(p[1]) * exp.(-0.5 * exp(p[2]) * (omega .- p[3]).^2) + exp(p[4]) * exp.(-0.5 * exp(p[5]) * (omega .- p[6]).^2) - spectrum/norm)^2/length(spectrum)
         try
             result = optimize(g, sp0, LBFGS(); autodiff = AutoForwardDiff()) 
             param = Optim.minimizer(result)
@@ -274,13 +270,9 @@ function solve_gaussian_twopols!(omega::AbstractVector{Float64},
     cost_etof = (model_etof_two_pols(omega, p0, e1A, e2A, e1B, e2B) - obs).^2
     cost_spec = (model_spec_two_pols(omega, p0) - spectrum/norm).^2
 
-    target = obs
-    weight = ones(size(obs))
-    model = (w, p) -> model_etof_two_pols(w, p, e1A, e2A, e1B, e2B)
+    model = p -> sum((model_etof_two_pols(omega, p, e1A, e2A, e1B, e2B) - obs).^2)/length(obs)
     if spectrum_mode >= 0
-        target = cat(obs, spectrum/norm; dims=1)
-        weight = cat(ones(size(obs)), (ratio_bins/kappa)^2 .* ones(size(spectrum)); dims=1)
-        model  = (w, p) -> cat(model_etof_two_pols(w, p, e1A, e2A, e1B, e2B), model_spec_two_pols(w, p); dims=1)
+        model  = p -> sum((model_etof_two_pols(omega, p, e1A, e2A, e1B, e2B) - obs).^2)/length(obs) + (ratio_bins/kappa)^2 * sum((model_spec_two_pols(omega, p) - spectrum/norm).^2)/length(spectrum)
     end
 
     try
@@ -314,18 +306,16 @@ function solve_gaussian_parallel_two_pols!(omega::AbstractVector{Float64},
                                            weight::AbstractVector{Float64},
                                            spectrum::AbstractVector{Float64},
                                            spectrum_mode::Int64,
-                                           evolution::AbstractVector{Float64}, evolution_spec::AbstractVector{Float64},
-                                           evolution_X::AbstractMatrix{Float64};
+                                           evolution::AbstractVector{Float64}, evolution_spec::AbstractVector{Float64};
                                            tol::Float64=1e-5, max_iter::Int64=2000,
                                            kappa::Float64=5.0)::Int64
-    n_Up = size(e1)[3]
+    n_Up = size(e1A)[3]
     omegas = stack(omega for j in 1:n_Up)
     xAs = stack(xA for j in 1:n_Up)
     xBs = stack(xB for j in 1:n_Up)
     ys = stack(y for j in 1:n_Up)
     e = stack(evolution for j in 1:n_Up)
     eS = stack(evolution_spec for j in 1:n_Up)
-    eX = stack(evolution_X for j in 1:n_Up)
     e1A = Array(e1A)
     e2A = Array(e2A)
     e1B = Array(e1B)
@@ -341,8 +331,7 @@ function solve_gaussian_parallel_two_pols!(omega::AbstractVector{Float64},
                                                 view(e1B, :, :, i_Up), view(e2B, :, :, i_Up),
                                                 view(obs, :), view(weight, :),
                                                 view(spectrum, :), spectrum_mode,
-                                                view(e, :, i_Up), view(eS, :, i_Up),
-                                                view(eX, :, :, i_Up);
+                                                view(e, :, i_Up), view(eS, :, i_Up);
                                                 tol=tol, max_iter=max_iter, kappa=kappa,
                                                 )
     end
@@ -353,6 +342,5 @@ function solve_gaussian_parallel_two_pols!(omega::AbstractVector{Float64},
     xB[:] .= xBs[:, best_Up]
     evolution[:] .= e[:, best_Up]
     evolution_spec[:] .= eS[:, best_Up]
-    evolution_X[:,:] .= eX[:, :, best_Up]
     return best_Up
 end
