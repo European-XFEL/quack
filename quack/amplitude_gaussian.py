@@ -13,11 +13,9 @@ def get_gaussian(
               initial: np.ndarray,
               spectrum: Optional[np.ndarray]=None,
               spectrum_mode: int=-1,
-              tol: float=1e-5,
-              max_iter: int=2000,
-              kappa: float=5,
-              step: float=1.0,
-              alpha: float=0,
+              tol: float=1e-8,
+              max_iter: int=1000,
+              kappa: float=200,
               ):
     r"""
     Find a set of coefficients x for the electric field, such that the intensity square |Ex|^2 matches the observation
@@ -53,7 +51,7 @@ def get_gaussian(
     evolution_X = np.zeros((max_iter, n_support), dtype=np.float64)
     opt_index = Quack.solve_gaussian_parallel_b(omega, y, X, E1, E2, O, weight, spectrum, spectrum_mode, evolution, evolution_spec,
                                        evolution_X,
-                                       tol=tol, max_iter=max_iter, kappa=float(kappa), step=float(step))
+                                       tol=tol, max_iter=max_iter, kappa=float(kappa))
 
     converged = True
     pred = (E1[:,:,opt_index-1] @ X)**2 + (E2[:,:,opt_index-1] @ X)**2
@@ -72,11 +70,9 @@ def get_gaussian_two_pols(
               initial: np.ndarray,
               spectrum: Optional[np.ndarray]=None,
               spectrum_mode: int=-1,
-              tol: float=1e-5,
-              max_iter: int=2000,
-              kappa: float=5,
-              step: float=1.0,
-              alpha: float=0
+              tol: float=1e-8,
+              max_iter: int=1000,
+              kappa: float=200,
               ):
     r"""
     Find a set of coefficients x for the electric field, such that the intensity square |Ex|^2 matches the observation
@@ -121,8 +117,6 @@ def get_gaussian_two_pols(
                                                 evolution, evolution_spec,
                                                 tol=tol, max_iter=max_iter,
                                                 kappa=float(kappa),
-                                                step=float(step),
-                                                alpha=float(alpha)
                                                 )
 
     converged = True

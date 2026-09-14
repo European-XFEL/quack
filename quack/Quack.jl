@@ -2,7 +2,7 @@
 module Quack
 
 include("solver.jl")
-include("guassian.jl")
+include("gaussian.jl")
 
 export solve!;
 export solve_parallel!

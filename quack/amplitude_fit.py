@@ -15,8 +15,8 @@ from quack.utils import fw
 from quack.amplitude_torch import optimize_with_torch
 from quack.amplitude_julia import get_field as get_field_julia
 from quack.amplitude_julia import get_field_two_pols as get_field_two_pols_julia
-from quack.amplitude_julia import get_gaussian as get_gaussian_julia
-#from quack.amplitude_julia import get_gaussian_two_pols as get_gaussian_two_pols_julia
+from quack.amplitude_gaussian import get_gaussian as get_gaussian_julia
+from quack.amplitude_gaussian import get_gaussian_two_pols as get_gaussian_two_pols_julia
 
 from functools import partial
 import scipy
@@ -578,31 +578,29 @@ class AmplitudeSolver(object):
         elif method == 'simple':
             omega = self.basis.omega[self.basis.omega_support]
             if self.additional_basis is not None:
-                #idx_A, converged, XA, XB, pred, evolution, evolution_spec = get_gaussian_two_pols_julia(
-                #    omega=omega,
-                #    E1A=self.basis.E1[:,:,iUp],
-                #    E2A=self.basis.E2[:,:,iUp],
-                #    E1B=self.additional_basis.E1[:,:,iUp],
-                #    E2B=self.additional_basis.E2[:,:,iUp],
-                #    O=s,
-                #    weight=w,
-                #    initial=initial,
-                #    spectrum=int_spectrum,
-                #    spectrum_mode=spectrum_mode,
-                #    tol=tol,
-                #    max_iter=max_iter,
-                #    kappa=kappa,
-                #    step=step,
-                #    alpha=alpha,
-                #)
-                #solution.raw = XA
-                #solution.additional_raw = XB
-                #Et, Ew = self.post_process(XA)
-                #solution.Et = Et
-                #solution.Ew = Ew
-                #a_Et, a_Ew = self.post_process(XB)
-                #solution.additional_Et = a_Et
-                #solution.additional_Ew = a_Ew
+                idx_A, converged, XA, XB, pred, evolution, evolution_spec = get_gaussian_two_pols_julia(
+                    omega=omega,
+                    E1A=self.basis.E1[:,:,iUp],
+                    E2A=self.basis.E2[:,:,iUp],
+                    E1B=self.additional_basis.E1[:,:,iUp],
+                    E2B=self.additional_basis.E2[:,:,iUp],
+                    O=s,
+                    weight=w,
+                    initial=initial,
+                    spectrum=int_spectrum,
+                    spectrum_mode=spectrum_mode,
+                    tol=tol,
+                    max_iter=max_iter,
+                    kappa=kappa,
+                )
+                solution.raw = XA
+                solution.additional_raw = XB
+                Et, Ew = self.post_process(XA)
+                solution.Et = Et
+                solution.Ew = Ew
+                a_Et, a_Ew = self.post_process(XB)
+                solution.additional_Et = a_Et
+                solution.additional_Ew = a_Ew
             else:
                 idx_A, converged, X, pred, evolution, evolution_spec, eX = get_gaussian_julia(
                     omega=omega,
@@ -616,8 +614,6 @@ class AmplitudeSolver(object):
                     tol=tol,
                     max_iter=max_iter,
                     kappa=kappa,
-                    step=step,
-                    alpha=alpha,
                 )
                 solution.raw = X
                 Et, Ew = self.post_process(X)
