@@ -128,26 +128,26 @@ function solve_gaussian!(omega::AbstractVector{Float64},
     norm = calculate_spectral_norm(n_dim, spectrum)
 
     # log(amplitude_1), log(precision_1), omega_1, phi_1, log(amplitude_2), log(precision_2), omega_2, phi_2
-    p0 = [0.0, 0.0, sum(omega)/length(omega), 0.0,
-          0.0, 0.0, sum(omega)/length(omega), 0.0]
+    p0 = [0.0, -1.0, sum(omega)/length(omega)+10.0, 0.0,
+          0.0, -1.0, sum(omega)/length(omega)-10.0, π]
     # fit initial condition to spectrum
     # cannot get the phases (to be taken in main fit), so set them to zero initially
-    if spectrum_mode >= 0
-        sp0 = cat(p0[1:3], p0[5:7]; dims=1)
-        g = p -> sum(exp(p[1]) * exp.(-0.5 * exp(p[2]) * (omega .- p[3]).^2) + exp(p[4]) * exp.(-0.5 * exp(p[5]) * (omega .- p[6]).^2) - spectrum/norm)^2/length(spectrum)
-        try
-            result = optimize(g, sp0, LBFGS(); autodiff = AutoForwardDiff()) 
-            param = Optim.minimizer(result)
-            p0[1:3] .= param[1:3]
-            p0[5:7] .= param[4:6]
-        catch exception
-            if isa(exception, SingularException) || isa(exception, ArgumentError)
-                println("Singular matrix in initial fit. Starting fit from random initial setting. $(exception)")
-            else
-                rethrow()
-            end
-        end
-    end
+    #if spectrum_mode >= 0
+    #    sp0 = cat(p0[1:3], p0[5:7]; dims=1)
+    #    g = p -> sum(exp(p[1]) * exp.(-0.5 * exp(p[2]) * (omega .- p[3]).^2) + exp(p[4]) * exp.(-0.5 * exp(p[5]) * (omega .- p[6]).^2) - spectrum/norm)^2/length(spectrum)
+    #    try
+    #        result = optimize(g, sp0, LBFGS(); autodiff = AutoForwardDiff()) 
+    #        param = Optim.minimizer(result)
+    #        p0[1:3] .= param[1:3]
+    #        p0[5:7] .= param[4:6]
+    #    catch exception
+    #        if isa(exception, SingularException) || isa(exception, ArgumentError)
+    #            println("Singular matrix in initial fit. Starting fit from random initial setting. $(exception)")
+    #        else
+    #            rethrow()
+    #        end
+    #    end
+    #end
 
     cost_etof = (model_etof(omega, p0, e1, e2) - obs).^2
     cost_spec = (model_spec(omega, p0) - spectrum/norm).^2
