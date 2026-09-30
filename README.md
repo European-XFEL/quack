@@ -82,6 +82,15 @@ with h5py.File("input_data.h5", "r") as fid:
                             )
 ```
 
+Importing `quack` starts Julia with all cores (`PYTHON_JULIACALL_THREADS=auto`) and lets it
+handle signals (`PYTHON_JULIACALL_HANDLE_SIGNALS=yes`); set either variable before the import to
+override. The Julia packages come from `juliapkg.json` and are installed on first import.
+
+The `method` argument selects the solver. The default `"julia"` is a primal-dual proximal
+iteration; `"nlls"` solves the same problem as a nonlinear least squares with Levenberg-Marquardt,
+which stops by itself after a few tens of steps and is usually faster (it does not support
+`additional_basis` yet); `"torch"` uses gradient descent.
+
 The `spectrum_mode` argument may be one of the following.
 
 Mode | Description
