@@ -8,7 +8,6 @@ def get_field(
               E1: np.ndarray,
               E2: np.ndarray,
               O: np.ndarray,
-              weight: np.ndarray,
               initial: np.ndarray,
               spectrum: Optional[np.ndarray]=None,
               spectrum_mode: int=-1,
@@ -57,9 +56,6 @@ def get_field(
     # reshape and normalize O
     O = np.reshape(O, (-1,))/np.sqrt(np.sum(O**2))
 
-    # reshape weight
-    weight = np.reshape(weight, (-1,))
-
     # initialize
     # initial observations
     y = np.copy(O)
@@ -72,7 +68,7 @@ def get_field(
     evolution = np.zeros(max_iter, dtype=np.float64)
     evolution_spec = np.zeros(max_iter, dtype=np.float64)
     evolution_X = np.zeros((max_iter, n_support), dtype=np.float64)
-    opt_index = Quack.solve_parallel_b(y, X, E1, E2, O, weight, spectrum, spectrum_mode, evolution, evolution_spec,
+    opt_index = Quack.solve_parallel_b(y, X, E1, E2, O, spectrum, spectrum_mode, evolution, evolution_spec,
                                        evolution_X,
                                        tol=tol, max_iter=max_iter, kappa=float(kappa))
 
@@ -89,7 +85,6 @@ def get_field_two_pols(
               E1B: np.ndarray,
               E2B: np.ndarray,
               O: np.ndarray,
-              weight: np.ndarray,
               initial: np.ndarray,
               spectrum: Optional[np.ndarray]=None,
               spectrum_mode: int=-1,
@@ -138,9 +133,6 @@ def get_field_two_pols(
     # reshape and normalize O
     O = np.reshape(O, (-1,))/np.sqrt(np.sum(O**2))
 
-    # reshape weight
-    weight = np.reshape(weight, (-1,))
-
     # initialize
     # initial observations
     y = np.copy(O)
@@ -159,7 +151,6 @@ def get_field_two_pols(
                                                 E1A, E2A,
                                                 E1B, E2B,
                                                 O,
-                                                weight,
                                                 spectrum, spectrum_mode,
                                                 evolution, evolution_spec,
                                                 tol=tol, max_iter=max_iter,
