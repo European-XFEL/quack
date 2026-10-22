@@ -216,9 +216,7 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
     spectrum_norm = calculate_norm(n_dim, spectrum)
 
     for n in 1:max_iter
-        # Ds = ∇‖yhat‖² = 2·Dyᵀ·yhat = 4·(e1ᵀ(z1.*yhat) + e2ᵀ(z2.*yhat)).
-        # Computed via gemv so the dense Jacobian Dy is never materialized;
-        # its elements are recomputed on the fly where needed below.
+        # derivative of yhat alone accummulated
         mul!(Ds, transpose(e1), z1)
         mul!(Ds, transpose(e2), z2, 1.0, 1.0)
 
@@ -451,9 +449,7 @@ function solve_two_pols!(y::AbstractVector{Float64},
     spectrum_norm = calculate_norm(n_dim, spectrum)
 
     for n in 1:max_iter
-        # Ds = ∇‖yhat‖² = 2·Dyᵀ·yhat = 4·(e1ᵀ(z1.*yhat) + e2ᵀ(z2.*yhat)).
-        # Computed via gemv so the dense Jacobian Dy is never materialized;
-        # its elements are recomputed on the fly where needed below.
+        # derivative of yhat alone accummulated
         mul!(DsA, transpose(e1A - e1B), z1A + z1B)
         mul!(DsA, transpose(e2A - e2B), z2A + z2B, 1.0, 1.0)
         mul!(DsS, transpose(e1B), z1A + z1B)
