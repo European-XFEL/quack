@@ -15,8 +15,6 @@ def get_field(
               tol: float=1e-5,
               max_iter: int=2000,
               kappa: float=5,
-              step: float=1.0,
-              alpha: float=0,
               ):
     r"""
     Find a set of coefficients x for the electric field, such that the intensity square |Ex|^2 matches the observation
@@ -76,7 +74,7 @@ def get_field(
     evolution_X = np.zeros((max_iter, n_support), dtype=np.float64)
     opt_index = Quack.solve_parallel_b(y, X, E1, E2, O, weight, spectrum, spectrum_mode, evolution, evolution_spec,
                                        evolution_X,
-                                       tol=tol, max_iter=max_iter, kappa=float(kappa), step=float(step))
+                                       tol=tol, max_iter=max_iter, kappa=float(kappa))
 
     converged = True
     pred = (E1[:,:,opt_index-1] @ X)**2 + (E2[:,:,opt_index-1] @ X)**2
@@ -98,8 +96,6 @@ def get_field_two_pols(
               tol: float=1e-5,
               max_iter: int=2000,
               kappa: float=5,
-              step: float=1.0,
-              alpha: float=0
               ):
     r"""
     Find a set of coefficients x for the electric field, such that the intensity square |Ex|^2 matches the observation
@@ -168,8 +164,6 @@ def get_field_two_pols(
                                                 evolution, evolution_spec,
                                                 tol=tol, max_iter=max_iter,
                                                 kappa=float(kappa),
-                                                step=float(step),
-                                                alpha=float(alpha)
                                                 )
 
     converged = True
