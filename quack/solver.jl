@@ -211,14 +211,19 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
     evolution_X[:,:] .= 0.0
     ratio_bins::Float64 = n_obs/n_x
 
+    G = Matrix{Float64}(undef, n_x, n_x)
+    mul!(G, transpose(e1), e1)
+    mul!(G, transpose(e2), e2, 1.0, 1.0)
+
     norm_yhat = calculate_y!(x, e1, e2, z1, z2, yhat)
 
     spectrum_norm = calculate_norm(n_dim, spectrum)
 
     for n in 1:max_iter
         # derivative of yhat alone accummulated
-        mul!(Ds, transpose(e1), z1)
-        mul!(Ds, transpose(e2), z2, 1.0, 1.0)
+        mul!(Ds, G, x)
+        #mul!(Ds, transpose(e1), z1)
+        #mul!(Ds, transpose(e2), z2, 1.0, 1.0)
 
         if mod(n, 25) == 1
             norm_dy = 0.0
