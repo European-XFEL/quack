@@ -80,28 +80,6 @@ function project_indicator_twopols!(n_dim::Int64,
         xA_tmp_proj[n_dim+j] = ratio[j]*xA_tmp[n_dim+j]
         xB_tmp_proj[n_dim+j] = ratio[j]*xB_tmp[n_dim+j]
     end
-    #zA = xA_tmp[1:n_dim] + 1im*xA_tmp[n_dim+1:end]
-    #zB = xB_tmp[1:n_dim] + 1im*xB_tmp[n_dim+1:end]
-    #s2 = (spectrum_reference.^2) ./ (spectrum_norm^2) .+ 1im*0
-    ## s^2 = |alpha zA + zB|^2
-    ## alpha^2 |zA|^2 + alpha re(zA zB*) + |zB|^2 - s^2 = 0
-    #a = real.(abs.(zA).^2)
-    #b = real.(zA .* conj(zB))
-    #c = real.(abs.(zB).^2 - s2)
-    #delta = max.(b.^2 .- 4*a.*c, 0)
-    #alpha_1 = -b./(2*a) + sqrt.(delta)./(2*a)
-    #alpha_2 = -b./(2*a) - sqrt.(delta)./(2*a)
-    #alpha = alpha_1
-    #for k in 1:n_dim
-    #    if abs(alpha_1[k] - 1) < abs(alpha_2[k] - 1)
-    #        alpha[k] = alpha_1[k]
-    #    else
-    #        alpha[k] = alpha_2[k]
-    #    end
-    #end
-    #xA_tmp_proj[1:n_dim] .= alpha .* xA_tmp[1:n_dim]
-    #xA_tmp_proj[n_dim+1:end] .= alpha .* xA_tmp[n_dim+1:end]
-    #xB_tmp_proj .= xB_tmp
 end
 
 function project_zeroindicator_twopols!(n_dim::Int64,
@@ -199,13 +177,12 @@ end
 function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
                 e1::AbstractMatrix{Float64}, e2::AbstractMatrix{Float64},
                 obs::AbstractVector{Float64},
-                weight::AbstractVector{Float64},
                 spectrum::AbstractVector{Float64},
                 spectrum_mode::Int64,
                 evolution::AbstractVector{Float64}, evolution_spec::AbstractVector{Float64},
                 evolution_X::AbstractMatrix{Float64};
                 tol::Float64=1e-5, max_iter::Int64=2000,
-                kappa::Float64=5.0, step::Float64=1.0, alpha::Float64=0.0)::Float64
+                kappa::Float64=5.0)::Float64
 
     sigma::Float64 = 0.1
     tau::Float64 = 0.1
@@ -234,16 +211,19 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
     evolution_X[:,:] .= 0.0
     ratio_bins::Float64 = n_obs/n_x
 
+    G = Matrix{Float64}(undef, n_x, n_x)
+    mul!(G, transpose(e1), e1)
+    mul!(G, transpose(e2), e2, 1.0, 1.0)
+
     norm_yhat = calculate_y!(x, e1, e2, z1, z2, yhat)
 
     spectrum_norm = calculate_norm(n_dim, spectrum)
 
     for n in 1:max_iter
-        # Ds = ∇‖yhat‖² = 2·Dyᵀ·yhat = 4·(e1ᵀ(z1.*yhat) + e2ᵀ(z2.*yhat)).
-        # Computed via gemv so the dense Jacobian Dy is never materialized;
-        # its elements are recomputed on the fly where needed below.
-        mul!(Ds, transpose(e1), z1)
-        mul!(Ds, transpose(e2), z2, 1.0, 1.0)
+        # derivative of yhat alone accummulated
+        mul!(Ds, G, x)
+        #mul!(Ds, transpose(e1), z1)
+        #mul!(Ds, transpose(e2), z2, 1.0, 1.0)
 
         if mod(n, 25) == 1
             norm_dy = 0.0
@@ -256,12 +236,12 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
                 end
             end
 
-            norm_dy = sqrt(norm_dy)*step
+            norm_dy = sqrt(norm_dy)
             sigma = 0.95/norm_dy
             tau = 0.95/norm_dy
         end
 
-        # X = X - tau * Dyᵀ * (y .* weight)
+        # X = X - tau * Dyᵀ * y
 
         # K'(x) = (E1 x)^2 + (E2 x)^2
         # dK_i/dx_j = 2 (E1 x)_i E1_ij + 2 (E2 x)_i E2_ij
@@ -312,22 +292,21 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
 
         norm_yhat = calculate_y!(x, e1, e2, z1, z2, yhat)
 
-        # F(y) = 1/2 ||w y - w obs||^2
-        # For a diagonal matrix W with diagonal w:
-        # F(y) = 1/2 ||W y - W obs||^2
-        # F(y) = 1/2 y^T (W^T W) y - obs^T (W^T W) y + || W obs ||^2
+        # F(y) = 1/2 ||y - obs||^2
+        # F(y) = 1/2 y^T y - obs^T y + || obs ||^2
         # For a function H(x) = 1/2 x^T A x + b^T x + c,
         # we have: prox_{l H} (v) = (I + l A)^{-1} (v - l b)
-        # Set A = W^T W = diag(w.^2), b = - obs^T (W^T W) = - (diag(w.^2) obs)^T
-        # prox_F(v) = (v + sigma w^2 O)/(1+sigma*w^2)
+        # Set A = I, b = - obs^T
+        # prox_F(v) = (v + \sigma O)/(1+\sigma)
         # update y = prox_F*(v)
         # v = y + sigma*K
         @. y = y + sigma*(yhat * norm_yhat)
-        # prox_F* = v - prox_F(v)
-        # prox_F* = (v + sigma w^2 v - v - sigma w^2 O)/(1 + sigma w^2)
-        # prox_F* = (sigma w^2 v - sigma w^2 O)/(1 + sigma w^2)
-        # prox_F* = sigma w^2/(1 + sigma w^2) (v - O)
-        @. y = sigma * weight^2/(1 + sigma * weight^2) * (y - obs)
+        # prox_{\sigma F*}(v) = v - \sigma prox_{1/\sigma F}(v/\sigma)
+        # prox_{1/\sigma F}(v/\sigma) = (v/\sigma + O/\sigma)/(1+1/\sigma)
+        # prox_{1/\sigma F}(v/\sigma) = (v + O)/(1+\sigma)
+        # prox_{\sigma F*}(v) = (v + sigma v - \sigma v - \sigma O)/(1 + sigma)
+        # prox_{\sigma F*}(v) = (v - \sigma O)/(1 + sigma)
+        @. y = 1.0/(1 + sigma) * (y - sigma .* obs)
 
         # compute errs and terminate loop if error limit is reached
         circshift!(errs_scratch, errs, -1)
@@ -339,7 +318,7 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
         # prevent closure-boxing.
         streak_err = 0.0
         for i in 1:n_obs
-            streak_err += weight[i]^2 * (yhat[i] * norm_yhat - obs[i])^2
+            streak_err += (yhat[i] * norm_yhat - obs[i])^2
         end
         evolution[n] = streak_err / n_obs
 
@@ -381,13 +360,12 @@ end
 function solve_parallel!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
                 e1::AbstractArray{Float64, 3}, e2::AbstractArray{Float64, 3},
                 obs::AbstractVector{Float64},
-                weight::AbstractVector{Float64},
                 spectrum::AbstractVector{Float64},
                 spectrum_mode::Int64,
                 evolution::AbstractVector{Float64}, evolution_spec::AbstractVector{Float64},
                 evolution_X::AbstractMatrix{Float64};
                 tol::Float64=1e-5, max_iter::Int64=2000,
-                kappa::Float64=5.0, step::Float64=1.0, alpha::Float64=0.0)::Int64
+                kappa::Float64=5.0)::Int64
     n_Up = size(e1)[3]
     xs = stack(x for j in 1:n_Up)
     ys = stack(y for j in 1:n_Up)
@@ -397,18 +375,16 @@ function solve_parallel!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
     e1 = Array(e1)
     e2 = Array(e2)
     obs = Array(obs)
-    weight = Array(weight)
     spectrum = Array(spectrum)
 
     tasks = map(1:n_Up) do i_Up
         Threads.@spawn solve!(view(ys, :, i_Up), view(xs, :, i_Up),
                               view(e1, :, :, i_Up), view(e2, :, :, i_Up),
-                              view(obs, :), view(weight, :),
+                              view(obs, :),
                               view(spectrum, :), spectrum_mode,
                               view(e, :, i_Up), view(eS, :, i_Up),
                               view(eX, :, :, i_Up);
-                              tol=tol, max_iter=max_iter, kappa=kappa,
-                              step=step, alpha=alpha)
+                              tol=tol, max_iter=max_iter, kappa=kappa)
     end
     norms = fetch.(tasks)
     best_Up = argmin(norms)
@@ -425,13 +401,12 @@ function solve_two_pols!(y::AbstractVector{Float64},
                          e1A::AbstractMatrix{Float64}, e2A::AbstractMatrix{Float64},
                          e1B::AbstractMatrix{Float64}, e2B::AbstractMatrix{Float64},
                          obs::AbstractVector{Float64},
-                         weight::AbstractVector{Float64},
                          spectrum::AbstractVector{Float64},
                          spectrum_mode::Int64,
                          evolution::AbstractVector{Float64}, evolution_spec::AbstractVector{Float64},
                          ; #evolution_X::AbstractMatrix{Float64};
                          tol::Float64=1e-5, max_iter::Int64=2000,
-                         kappa::Float64=5.0, step::Float64=1.0, alpha::Float64=1e-5)::Float64
+                         kappa::Float64=5.0)::Float64
 
     sigma::Float64 = 0.1
     tau::Float64 = 0.1
@@ -479,9 +454,7 @@ function solve_two_pols!(y::AbstractVector{Float64},
     spectrum_norm = calculate_norm(n_dim, spectrum)
 
     for n in 1:max_iter
-        # Ds = ∇‖yhat‖² = 2·Dyᵀ·yhat = 4·(e1ᵀ(z1.*yhat) + e2ᵀ(z2.*yhat)).
-        # Computed via gemv so the dense Jacobian Dy is never materialized;
-        # its elements are recomputed on the fly where needed below.
+        # derivative of yhat alone accummulated
         mul!(DsA, transpose(e1A - e1B), z1A + z1B)
         mul!(DsA, transpose(e2A - e2B), z2A + z2B, 1.0, 1.0)
         mul!(DsS, transpose(e1B), z1A + z1B)
@@ -507,12 +480,12 @@ function solve_two_pols!(y::AbstractVector{Float64},
                 end
             end
 
-            norm_dy = sqrt(norm_dy)*step
+            norm_dy = sqrt(norm_dy)
             sigma = 0.95/norm_dy
             tau = 0.95/norm_dy
         end
 
-        # X = X - tau * Dyᵀ * (y .* weight)
+        # X = X - tau * Dyᵀ * y
 
         # K'(x) = (E1a xa + E1b xb)^2 + (E2a xa + E2b xb)^2
         # K'(x) = (E1a xa + E1b (xs - xa))^2 + (E2a xa + E2b (xs - xa))^2
@@ -609,22 +582,21 @@ function solve_two_pols!(y::AbstractVector{Float64},
                                           z1B, z2B,
                                           yhat)
 
-        # F(y) = 1/2 ||w y - w obs||^2
-        # For a diagonal matrix W with diagonal w:
-        # F(y) = 1/2 ||W y - W obs||^2
-        # F(y) = 1/2 y^T (W^T W) y - obs^T (W^T W) y + || W obs ||^2
+        # F(y) = 1/2 ||y - obs||^2
+        # F(y) = 1/2 y^T y - obs^T y + || obs ||^2
         # For a function H(x) = 1/2 x^T A x + b^T x + c,
         # we have: prox_{l H} (v) = (I + l A)^{-1} (v - l b)
-        # Set A = W^T W = diag(w.^2), b = - obs^T (W^T W) = - (diag(w.^2) obs)^T
-        # prox_F(v) = (v + sigma w^2 O)/(1+sigma*w^2)
+        # Set A = I, b = - obs^T
+        # prox_F(v) = (v + \sigma O)/(1+\sigma)
         # update y = prox_F*(v)
         # v = y + sigma*K
         @. y = y + sigma*(yhat * norm_yhat)
-        # prox_F* = v - prox_F(v)
-        # prox_F* = (v + sigma w^2 v - v - sigma w^2 O)/(1 + sigma w^2)
-        # prox_F* = (sigma w^2 v - sigma w^2 O)/(1 + sigma w^2)
-        # prox_F* = sigma w^2/(1 + sigma w^2) (v - O)
-        @. y = sigma * weight^2/(1 + sigma * weight^2) * (y - obs)
+        # prox_{\sigma F*}(v) = v - \sigma prox_{1/\sigma F}(v/\sigma)
+        # prox_{1/\sigma F}(v/\sigma) = (v/\sigma + O/\sigma)/(1+1/\sigma)
+        # prox_{1/\sigma F}(v/\sigma) = (v + O)/(1+\sigma)
+        # prox_{\sigma F*}(v) = (v + sigma v - \sigma v - \sigma O)/(1 + sigma)
+        # prox_{\sigma F*}(v) = (v - \sigma O)/(1 + sigma)
+        @. y = 1.0/(1 + sigma) * (y - sigma .* obs)
 
         # compute errs and terminate loop if error limit is reached
         circshift!(errs_scratch, errs, -1)
@@ -636,7 +608,7 @@ function solve_two_pols!(y::AbstractVector{Float64},
         # prevent closure-boxing.
         streak_err = 0.0
         for i in 1:n_obs
-            streak_err += weight[i]^2 * (yhat[i] * norm_yhat - obs[i])^2
+            streak_err += (yhat[i] * norm_yhat - obs[i])^2
         end
         evolution[n] = streak_err / n_obs
 
@@ -682,13 +654,12 @@ function solve_parallel_two_pols!(y::AbstractVector{Float64},
                                   e1A::AbstractArray{Float64, 3}, e2A::AbstractArray{Float64, 3},
                                   e1B::AbstractArray{Float64, 3}, e2B::AbstractArray{Float64, 3},
                                   obs::AbstractVector{Float64},
-                                  weight::AbstractVector{Float64},
                                   spectrum::AbstractVector{Float64},
                                   spectrum_mode::Int64,
                                   evolution::AbstractVector{Float64}, evolution_spec::AbstractVector{Float64},
                                   ;#evolution_X::AbstractMatrix{Float64};
                                   tol::Float64=1e-5, max_iter::Int64=2000,
-                                  kappa::Float64=5.0, step::Float64=1.0, alpha::Float64=0.0)::Int64
+                                  kappa::Float64=5.0)::Int64
     n_Up = size(e1A)[3]
     xAs = stack(xA for j in 1:n_Up)
     xBs = stack(xB for j in 1:n_Up)
@@ -701,7 +672,6 @@ function solve_parallel_two_pols!(y::AbstractVector{Float64},
     e1B = Array(e1B)
     e2B = Array(e2B)
     obs = Array(obs)
-    weight = Array(weight)
     spectrum = Array(spectrum)
 
     tasks = map(1:n_Up) do i_Up
@@ -709,12 +679,11 @@ function solve_parallel_two_pols!(y::AbstractVector{Float64},
                                        view(xAs, :, i_Up), view(xBs, :, i_Up),
                                        view(e1A, :, :, i_Up), view(e2A, :, :, i_Up),
                                        view(e1B, :, :, i_Up), view(e2B, :, :, i_Up),
-                                       view(obs, :), view(weight, :),
+                                       view(obs, :),
                                        view(spectrum, :), spectrum_mode,
                                        view(e, :, i_Up), view(eS, :, i_Up),
                                        ;#view(eX, :, :, i_Up);
-                                       tol=tol, max_iter=max_iter, kappa=kappa,
-                                       step=step, alpha=alpha)
+                                       tol=tol, max_iter=max_iter, kappa=kappa)
     end
     norms = fetch.(tasks)
     best_Up = argmin(norms)
