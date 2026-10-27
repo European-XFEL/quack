@@ -460,7 +460,7 @@ class AmplitudeSolver(object):
             if constrain == "everywhere":
                 np.nan_to_num(int_spectrum, copy=False)
 
-        # also clip it at zero: it is nonsense to get negative intensities or weights
+        # also clip it at zero: it is nonsense to get negative intensities
         s = np.ascontiguousarray(np.clip(s/np.sqrt(np.sum(s**2)), a_min=0, a_max=None))
 
         # get an initial guess
