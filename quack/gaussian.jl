@@ -43,8 +43,8 @@ end
 
 function modelx(omega::AbstractVector{<:Real}, m::AbstractVector{<:Real})::AbstractVector{<:Real}
     "Map Gaussian model to a complex spectrum"
-    x1 = modelx_single(omega, m[1:4])
-    x2 = modelx_single(omega, m[5:8])
+    x1 = modelx_single(omega, m[1:5])
+    x2 = modelx_single(omega, m[6:10])
     return x1 + x2
 end
 
@@ -54,7 +54,8 @@ function modelx_single(omega::AbstractVector{<:Real}, m::AbstractVector{<:Real})
     precision = exp(m[2])
     omega_1 = m[3]
     phi_1 = m[4]
-    spectrum = amplitude_1 * exp.(-0.5*precision*(omega .- omega_1).^2 + 1im*(phi_1 .* omega))
+    chirp = m[5]
+    spectrum = amplitude_1 * exp.(-0.5*precision*(omega .- omega_1).^2 + 1im*(phi_1 .* omega) + sign(chirp) .* 1im*(chirp .* omega).^2)
     return cat(real.(spectrum), imag.(spectrum); dims=1)
 end
 
@@ -68,8 +69,8 @@ function model_etof_two_pols(omega::AbstractVector{<:Real}, p::AbstractVector{<:
                              e1A::AbstractMatrix{<:Real}, e2A::AbstractMatrix{<:Real},
                              e1B::AbstractMatrix{<:Real}, e2B::AbstractMatrix{<:Real})::AbstractVector{<:Real}
     "Obtain prediction in each dimension of the eTOF observation target"
-    xA = modelx_single(omega, p[1:4])
-    xB = modelx_single(omega, p[5:8])
+    xA = modelx_single(omega, p[1:5])
+    xB = modelx_single(omega, p[6:10])
     return K_two_pols(xA, xB, e1A, e2A, e1B, e2B)
 end
 
@@ -84,8 +85,8 @@ end
 
 function model_spec_two_pols(omega::AbstractVector{<:Real}, p::AbstractVector{<:Real})::AbstractVector{<:Real}
     "Obtain prediction in each dimension of the eTOF observation target"
-    xA = modelx_single(omega, p[1:4])
-    xB = modelx_single(omega, p[5:8])
+    xA = modelx_single(omega, p[1:5])
+    xB = modelx_single(omega, p[6:10])
     n_s = cld(length(xA), 2)
     pred_spec = sqrt.((xA[1:n_s] + xB[1:n_s]).^2 + (xA[n_s+1:end] + xB[n_s+1:end]).^2)
     pred_spec = pred_spec/sqrt(mapreduce(x -> x^2, +, pred_spec))
@@ -127,19 +128,20 @@ function solve_gaussian!(omega::AbstractVector{Float64},
 
     norm = calculate_spectral_norm(n_dim, spectrum)
 
-    # log(amplitude_1), log(precision_1), omega_1, phi_1, log(amplitude_2), log(precision_2), omega_2, phi_2
-    p0 = [0.0, -1.0, sum(omega)/length(omega)+10.0, 0.0,
-          0.0, -1.0, sum(omega)/length(omega)-10.0, π]
+    # log(amplitude_1), log(precision_1), omega_1, phi_1, chirp_1
+    # log(amplitude_2), log(precision_2), omega_2, phi_2, chirp_2
+    p0 = [0.0, -1.0, sum(omega)/length(omega)+10.0, 0.0, 0.0,
+          0.0, -1.0, sum(omega)/length(omega)-10.0, π, 0.0]
     # fit initial condition to spectrum
     # cannot get the phases (to be taken in main fit), so set them to zero initially
     #if spectrum_mode >= 0
-    #    sp0 = cat(p0[1:3], p0[5:7]; dims=1)
+    #    sp0 = cat(p0[1:3], p0[6:8]; dims=1)
     #    g = p -> sum(exp(p[1]) * exp.(-0.5 * exp(p[2]) * (omega .- p[3]).^2) + exp(p[4]) * exp.(-0.5 * exp(p[5]) * (omega .- p[6]).^2) - spectrum/norm)^2/length(spectrum)
     #    try
     #        result = optimize(g, sp0, LBFGS(); autodiff = AutoForwardDiff()) 
     #        param = Optim.minimizer(result)
     #        p0[1:3] .= param[1:3]
-    #        p0[5:7] .= param[4:6]
+    #        p0[6:8] .= param[4:6]
     #    catch exception
     #        if isa(exception, SingularException) || isa(exception, ArgumentError)
     #            println("Singular matrix in initial fit. Starting fit from random initial setting. $(exception)")
@@ -245,27 +247,28 @@ function solve_gaussian_two_pols!(omega::AbstractVector{Float64},
 
     norm = calculate_spectral_norm(n_dim, spectrum)
 
-    # log(amplitude_1), log(precision_1), omega_1, phi_1, log(amplitude_2), log(precision_2), omega_2, phi_2
-    p0 = [0.0, 0.0, sum(omega)/length(omega), 0.0,
-          0.0, 0.0, sum(omega)/length(omega), 0.0]
+    # log(amplitude_1), log(precision_1), omega_1, phi_1, chirp_1,
+    # log(amplitude_2), log(precision_2), omega_2, phi_2, chirp_2,
+    p0 = [0.0, 0.0, sum(omega)/length(omega), 0.0, 0.0,
+          0.0, 0.0, sum(omega)/length(omega), 0.0, 0.0]
     # fit initial condition to spectrum
     # cannot get the phases (to be taken in main fit), so set them to zero initially
-    if spectrum_mode >= 0
-        sp0 = cat(p0[1:3], p0[5:7]; dims=1)
-        g = p -> sum(exp(p[1]) * exp.(-0.5 * exp(p[2]) * (omega .- p[3]).^2) + exp(p[4]) * exp.(-0.5 * exp(p[5]) * (omega .- p[6]).^2) - spectrum/norm)^2/length(spectrum)
-        try
-            result = optimize(g, sp0, LBFGS(); autodiff = AutoForwardDiff()) 
-            param = Optim.minimizer(result)
-            p0[1:3] .= param[1:3]
-            p0[5:7] .= param[4:6]
-        catch exception
-            if isa(exception, SingularException) || isa(exception, ArgumentError)
-                println("Singular matrix in initial fit. Starting fit from random initial setting. $(exception)")
-            else
-                rethrow()
-            end
-        end
-    end
+    #if spectrum_mode >= 0
+    #    sp0 = cat(p0[1:3], p0[6:8]; dims=1)
+    #    g = p -> sum(exp(p[1]) * exp.(-0.5 * exp(p[2]) * (omega .- p[3]).^2) + exp(p[4]) * exp.(-0.5 * exp(p[5]) * (omega .- p[6]).^2) - spectrum/norm)^2/length(spectrum)
+    #    try
+    #        result = optimize(g, sp0, LBFGS(); autodiff = AutoForwardDiff()) 
+    #        param = Optim.minimizer(result)
+    #        p0[1:3] .= param[1:3]
+    #        p0[6:8] .= param[4:6]
+    #    catch exception
+    #        if isa(exception, SingularException) || isa(exception, ArgumentError)
+    #            println("Singular matrix in initial fit. Starting fit from random initial setting. $(exception)")
+    #        else
+    #            rethrow()
+    #        end
+    #    end
+    #end
 
     cost_etof = (model_etof_two_pols(omega, p0, e1A, e2A, e1B, e2B) - obs).^2
     cost_spec = (model_spec_two_pols(omega, p0) - spectrum/norm).^2
@@ -279,8 +282,8 @@ function solve_gaussian_two_pols!(omega::AbstractVector{Float64},
         result = optimize(model, p0, LBFGS(); autodiff = AutoForwardDiff()) 
         param = Optim.minimizer(result)
         p0 .= param
-        xA .= modelx_single(omega, p0[1:4])
-        xB .= modelx_single(omega, p0[5:8])
+        xA .= modelx_single(omega, p0[1:5])
+        xB .= modelx_single(omega, p0[6:10])
     catch exception
         if isa(exception, SingularException) || isa(exception, ArgumentError)
             println("Singular matrix in main fit. Dropping this Up setting. $(exception)")
