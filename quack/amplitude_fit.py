@@ -136,6 +136,8 @@ class Basis:
     Up: np.ndarray | None = None
     # period of the laser
     Tl: float = 0.0
+    # maximum time
+    Tmax: float = 0.0
     # Ip
     Ip: float = 0.0
     # oversampling
@@ -177,6 +179,10 @@ class Basis:
         basis.oversampling = h5grp["oversampling"][()]
         basis.NW, basis.Ntheta, basis.Nomega, basis.NA = basis.b.shape
         basis.data_energy_axis = deepcopy(basis.W)
+        if "Tmax" in h5grp:
+            basis.Tmax = h5grp["Tmax"][()]
+        else:
+            basis.Tmax = basis.Tl
 
         return basis.slice(energy_axis, angle_axis, extra_energy_support)
 
@@ -239,6 +245,7 @@ class Basis:
         good &= np.allclose(self.time, other.time)
         good &= np.allclose(self.Up, other.Up)
         good &= np.allclose(self.Tl, other.Tl)
+        good &= np.allclose(self.Tmax, other.Tmax)
         good &= np.allclose(self.Ip, other.Ip)
         good &= np.allclose(self.oversampling, other.oversampling)
         return good
@@ -291,14 +298,14 @@ class AmplitudeSolver(object):
     @property
     def time_axis(self):
         n_omega = len(self.basis.omega)
-        dt = self.basis.oversampling*self.basis.Tl/n_omega
-        return np.arange(0.0, self.basis.Tl, dt)
+        dt = self.basis.oversampling*self.basis.Tmax/n_omega
+        return np.arange(0.0, self.basis.Tmax, dt)
 
     @property
     def energy_axis(self):
         n_omega = len(self.basis.omega)
         nbins_time = n_omega//self.basis.oversampling
-        dt = self.basis.Tl/nbins_time
+        dt = self.basis.Tmax/nbins_time
         return  np.fft.fftshift(np.fft.fftfreq(nbins_time, dt/fs_per_au)*eV_per_au*2*np.pi + self.basis.omega[0])
 
     def post_process(self, raw: np.ndarray):
