@@ -4,7 +4,6 @@ import logging
 def optimize_with_torch(E1,
                         E2,
                         O,
-                        weight,
                         initial,
                         spectrum=None,
                         spectrum_mode=None,
@@ -79,17 +78,15 @@ def optimize_with_torch(E1,
 
     # flatten target
     s = torch.from_numpy(O.flatten()).unsqueeze(0)
-    w = torch.from_numpy(weight.flatten()).unsqueeze(0)
 
     Nobs = s.shape[-1]
 
     # this models 1/2 sigma |observation - prediction|^2 + tau
     class StreakingLossFunction(torch.nn.Module):
-        def __init__(self, w):
+        def __init__(self):
             super().__init__()
-            self.w = w
         def forward(self, output, target):
-            return 0.5*torch.mean((self.w**2) * (output - target)**2, dim=-1)
+            return 0.5*torch.mean((output - target)**2, dim=-1)
 
     class SpectrumLossFunction(torch.nn.Module):
         def __init__(self):
@@ -103,10 +100,9 @@ def optimize_with_torch(E1,
     if gpu:
         target_spectrum = target_spectrum.cuda()
         s = s.cuda()
-        w = w.cuda()
 
     model = Model()
-    streaking_loss_fn = StreakingLossFunction(w)
+    streaking_loss_fn = StreakingLossFunction()
     spectrum_loss_fn = SpectrumLossFunction()
     if gpu:
         model = model.cuda()
