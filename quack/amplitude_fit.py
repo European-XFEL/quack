@@ -401,7 +401,6 @@ class AmplitudeSolver(object):
         return initial
 
     def solve(self, obs: np.ndarray,
-              weight: Optional[np.ndarray]=None,
               tol: Optional[float]=None,
               method: str="julia",
               guess_initial: bool=True,
@@ -415,15 +414,12 @@ class AmplitudeSolver(object):
               kappa: float=200.0,
               gpu: bool=False,
               constrain: str="everywhere",
-              step: float=1.0,
-              alpha: float=0.0,
               ) -> QUACKAmpSolution:
         """
         Find the spectrogram for a given eTOF observation in `obs`.
 
         Args:
           obs: Observed data.
-          weight: Weight proportional to the data accuracy. Same shape as observation.
           tol: Tolerance for convergence: |rnorm[100-i] - rnorm[i]| < tol at convergence.
           method: If "parallel", solve for all Up in parallel. If "optimize_A", use a bisection method to avoid parallelization.
           guess_initial: Make a guess of the initial energy spectrum to get faster convergence.
@@ -447,14 +443,8 @@ class AmplitudeSolver(object):
 
         iUp = np.unique(np.searchsorted(self.basis.Up, Up))
         iUp[iUp >= len(self.basis.Up)] = len(self.basis.Up) - 1
-        # if weight is not provided, fallback to ones
-        if weight is None:
-            w = np.ones_like(obs)
-        else:
-            w = np.copy(weight)
         # interpolate energy axis to match self.W
         s = interpolate_energy_axis(self.basis.W, self.basis.data_energy_axis, obs)
-        w = interpolate_energy_axis(self.basis.W, self.basis.data_energy_axis, w)
 
         # set up spectrum in amplitude and interpolate it if it is given
         int_spectrum = None
@@ -470,9 +460,8 @@ class AmplitudeSolver(object):
             if constrain == "everywhere":
                 np.nan_to_num(int_spectrum, copy=False)
 
-        # also clip it at zero: it is nonsense to get negative intensities or weights
+        # also clip it at zero: it is nonsense to get negative intensities
         s = np.ascontiguousarray(np.clip(s/np.sqrt(np.sum(s**2)), a_min=0, a_max=None))
-        w = np.ascontiguousarray(np.clip(w/np.amax(w), a_min=0, a_max=None))
 
         # get an initial guess
         initial = None
@@ -498,7 +487,6 @@ class AmplitudeSolver(object):
             idx_A, converged, X, pred, evolution, evolution_spec, eX = optimize_with_torch(E1=self.basis.E1[:,:,iUp],
                                                                        E2=self.basis.E2[:,:,iUp],
                                                                        O=s,
-                                                                       weight=w,
                                                                        spectrum=int_spectrum,
                                                                        spectrum_mode=spectrum_mode,
                                                                        initial=initial,
@@ -513,7 +501,7 @@ class AmplitudeSolver(object):
             solution.evolution_spec = evolution_spec
             solution.evolution_Et = eX
             solution.real_omega_support = self.basis.real_omega_support
-            solution.rnorm = get_rnorm(pred.flatten(), s.flatten(), w.flatten())
+            solution.rnorm = get_rnorm(pred.flatten(), s.flatten())
             solution.target = solution.rnorm
             solution.unc = np.amax(np.fabs(solution.pred/np.amax(pred) - s/np.amax(s)))
             Et, Ew = self.post_process(X)
@@ -528,15 +516,12 @@ class AmplitudeSolver(object):
                     E1B=self.additional_basis.E1[:,:,iUp],
                     E2B=self.additional_basis.E2[:,:,iUp],
                     O=s,
-                    weight=w,
                     initial=initial,
                     spectrum=int_spectrum,
                     spectrum_mode=spectrum_mode,
                     tol=tol,
                     max_iter=max_iter,
                     kappa=kappa,
-                    step=step,
-                    alpha=alpha,
                 )
                 solution.raw = XA
                 solution.additional_raw = XB
@@ -551,15 +536,12 @@ class AmplitudeSolver(object):
                     E1=self.basis.E1[:,:,iUp],
                     E2=self.basis.E2[:,:,iUp],
                     O=s,
-                    weight=w,
                     initial=initial,
                     spectrum=int_spectrum,
                     spectrum_mode=spectrum_mode,
                     tol=tol,
                     max_iter=max_iter,
                     kappa=kappa,
-                    step=step,
-                    alpha=alpha,
                 )
                 solution.raw = X
                 Et, Ew = self.post_process(X)
@@ -570,7 +552,7 @@ class AmplitudeSolver(object):
             solution.evolution = evolution
             solution.evolution_spec = evolution_spec
             solution.real_omega_support = self.basis.real_omega_support
-            solution.rnorm = get_rnorm(pred.flatten(), s.flatten(), w.flatten())
+            solution.rnorm = get_rnorm(pred.flatten(), s.flatten())
             solution.target = solution.rnorm
             solution.unc = np.amax(np.fabs(solution.pred/np.amax(pred) - s/np.amax(s)))
         else:
@@ -580,8 +562,7 @@ class AmplitudeSolver(object):
         solution.unc_per_angle = np.amax(np.fabs(solution.pred/np.amax(solution.pred) - s/np.amax(s)), axis=-2)
         solution.unc_per_energy = np.amax(np.fabs(solution.pred/np.amax(solution.pred) - s/np.amax(s)), axis=-1)
         solution.obs = s
-        solution.weight = w
-        solution.cnorm = get_cnorm(solution.pred.flatten(), s.flatten(), w.flatten())
+        solution.cnorm = get_cnorm(solution.pred.flatten(), s.flatten())
         solution.rspec = 0.0
         solution.cspec = 1.0
 
