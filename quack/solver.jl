@@ -211,9 +211,9 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
     evolution_X[:,:] .= 0.0
     ratio_bins::Float64 = n_obs/n_x
 
-    G = Matrix{Float64}(undef, n_x, n_x)
-    mul!(G, transpose(e1), e1)
-    mul!(G, transpose(e2), e2, 1.0, 1.0)
+    #G = Matrix{Float64}(undef, n_x, n_x)
+    #mul!(G, transpose(e1), e1)
+    #mul!(G, transpose(e2), e2, 1.0, 1.0)
 
     norm_yhat = calculate_y!(x, e1, e2, z1, z2, yhat)
 
@@ -221,9 +221,9 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
 
     for n in 1:max_iter
         # derivative of yhat alone accummulated
-        mul!(Ds, G, x)
-        #mul!(Ds, transpose(e1), z1)
-        #mul!(Ds, transpose(e2), z2, 1.0, 1.0)
+        #mul!(Ds, G, x)
+        mul!(Ds, transpose(e1), z1)
+        mul!(Ds, transpose(e2), z2, 1.0, 1.0)
 
         if mod(n, 25) == 1
             norm_dy = 0.0
@@ -244,7 +244,7 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
         # X = X - tau * Dyᵀ * y
 
         # K'(x) = (E1 x)^2 + (E2 x)^2
-        # dK_i/dx_j = 2 (E1 x)_i E1_ij + 2 (E2 x)_i E2_ij
+        # dK'_i/dx_j = 2 (E1 x)_i E1_ij + 2 (E2 x)_i E2_ij
         #
         # K(x) = K'(x)/norm, where norm = sqrt(sum(K'(x)))
         # dK_i/dx_j = dK_i/dx_j / norm - 1/2 K'_i/norm^3 sum_k(dK'_k/dx_j)
@@ -253,7 +253,7 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
         # x = x - tau (dK/dx)^T y
         #
         # (dK'/dx)^T y = 2 sum_j(y_j z1_j E1_ji + y_j z2_j E2_ji)
-        # (dK/dx)^T y = 2 sum_j(y_j z1_j E1_ji + y_j z2_j E2_ji) - sum_k(z1_k E1_ki + z2_k E2_ki) sum_j(K_j y_j) /norm^3
+        # (dK/dx)^T y = 2 sum_j(y_j z1_j E1_ji + y_j z2_j E2_ji)/norm - sum_k(z1_k E1_ki + z2_k E2_ki) sum_j(K'_j y_j) /norm^3
         s = dot(y, yhat)
 
         @. tmp_obs = y * z1
