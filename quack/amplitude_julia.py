@@ -59,6 +59,7 @@ def get_field(
     # initialize
     # initial observations
     y = np.copy(O)
+    y[:] = 0.0
     X = np.ones((n_support,), dtype=O.dtype)
     if spectrum is None:
         spectrum = np.nan*np.zeros((n_support//2,), dtype=O.dtype)
