@@ -216,8 +216,9 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
     spectrum_norm = calculate_norm(n_dim, spectrum)
 
     for n in 1:max_iter
-        mul!(Ds, transpose(e1), z1)
-        mul!(Ds, transpose(e2), z2, 1.0, 1.0)
+        mul!(Ds, transpose(e1), yhat .* z1)
+        mul!(Ds, transpose(e2), yhat .* z2, 1.0, 1.0)
+        Ds .*= 2.0
 
         if mod(n, 25) == 1
             norm_dy = 0.0
@@ -241,13 +242,13 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
         # dK'_i/dx_j = 2 (E1 x)_i E1_ij + 2 (E2 x)_i E2_ij
         #
         # K(x) = K'(x)/norm, where norm = sqrt(sum(K'(x)))
-        # dK_i/dx_j = dK_i/dx_j / norm - 1/2 K'_i/norm^3 sum_k(dK'_k/dx_j)
-        # dK_i/dx_j = dK_i/dx1_j / norm - K'_i/norm^3 sum_k (z1_k E1_kj + z2_k E2_kj)
+        # dK_i/dx_j = dK_i/dx_j / norm - 1/2 K'_i/norm^3 sum_k(2 K'_k dK'_k/dx_j)
+        # dK_i/dx_j = dK_i/dx1_j / norm - K'_i/norm^3 sum_k (2 K'_k z1_k E1_kj + 2 K'_k z2_k E2_kj)
         #
         # x = x - tau (dK/dx)^T y
         #
         # (dK'/dx)^T y = 2 sum_j(y_j z1_j E1_ji + y_j z2_j E2_ji)
-        # (dK/dx)^T y = 2 sum_j(y_j z1_j E1_ji + y_j z2_j E2_ji)/norm - sum_k(z1_k E1_ki + z2_k E2_ki) sum_j(K'_j y_j) /norm^3
+        # (dK/dx)^T y = 2 sum_j(y_j z1_j E1_ji + y_j z2_j E2_ji)/norm - sum_k(2 K'_k z1_k E1_ki + 2 K'_k z2_k E2_ki) sum_j(K'_j y_j) /norm^3
         s = dot(y, yhat)
 
         @. tmp_obs = y * z1
