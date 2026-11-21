@@ -211,17 +211,11 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
     evolution_X[:,:] .= 0.0
     ratio_bins::Float64 = n_obs/n_x
 
-    #G = Matrix{Float64}(undef, n_x, n_x)
-    #mul!(G, transpose(e1), e1)
-    #mul!(G, transpose(e2), e2, 1.0, 1.0)
-
     norm_yhat = calculate_y!(x, e1, e2, z1, z2, yhat)
 
     spectrum_norm = calculate_norm(n_dim, spectrum)
 
     for n in 1:max_iter
-        # derivative of yhat alone accummulated
-        #mul!(Ds, G, x)
         mul!(Ds, transpose(e1), z1)
         mul!(Ds, transpose(e2), z2, 1.0, 1.0)
 
@@ -301,6 +295,13 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
         # update y = prox_F*(v)
         # v = y + sigma*K
         @. y = y + sigma*(yhat * norm_yhat)
+        # prox_{F*}(v) = v - prox_{F}(v)
+        # prox_{sigma F*}(v) = v - prox_{sigma F}(v)
+        # prox_{sigma F*}(v) = v - (v + \sigma O)/(1+\sigma)
+        # prox_{sigma F*}(v) = (v + \sigma v - v + \sigma O)/(1+\sigma)
+        # prox_{sigma F*}(v) = (\sigma v + \sigma O)/(1+\sigma)
+        # prox_{sigma F*}(v) = \sigma/(1+\sigma) (v + O)
+        # or ...
         # prox_{\sigma F*}(v) = v - \sigma prox_{1/\sigma F}(v/\sigma)
         # prox_{1/\sigma F}(v/\sigma) = (v/\sigma + O/\sigma)/(1+1/\sigma)
         # prox_{1/\sigma F}(v/\sigma) = (v + O)/(1+\sigma)
