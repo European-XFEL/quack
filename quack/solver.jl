@@ -356,6 +356,9 @@ function solve!(y::AbstractVector{Float64}, x::AbstractVector{Float64},
 
     #norm_yhat = calculate_y!(x, e1, e2, z1, z2, yhat)
     #return sum((yhat.*norm_yhat - obs/sqrt(sum(obs.^2))).^2)
+    if spectrum_mode < 0
+        return evolution[end]
+    end
     return evolution[end] + ratio_bins/kappa * evolution_spec[end]
 end
 
